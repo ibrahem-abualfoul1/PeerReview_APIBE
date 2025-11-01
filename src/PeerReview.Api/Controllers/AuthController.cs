@@ -40,6 +40,6 @@ public class AuthController : ControllerBase
         var user = await _db.Users.Include(u=>u.Role).FirstOrDefaultAsync(u => u.UserName == req.UserName && u.IsActive);
         if (user == null || !BCrypt.Net.BCrypt.Verify(req.Password, user.PasswordHash)) return Unauthorized();
         var token = _jwt.CreateToken(user, user.Role?.Name ?? "User", TimeSpan.FromMinutes(int.Parse(_cfg["Jwt:ExpiresMinutes"]!)));
-        return new LoginResponse(token, user.UserName, user.Role?.Name ?? "User");
+        return new LoginResponse(token, user.UserName, user.Role?.Name ?? "User" , user.Id);
     }
 }

@@ -15,7 +15,7 @@ public class LookupsController : ControllerBase
     private readonly AppDbContext _db;
     public LookupsController(AppDbContext db) => _db = db;
 
-    [HttpGet] public async Task<ActionResult<IEnumerable<Lookup>>> GetAll() => await _db.Lookups.ToListAsync();
+    [HttpGet] public async Task<ActionResult<IEnumerable<Lookup>>> GetAll() => await _db.Lookups.Include(x=>x.SubLookups).ToListAsync();
 
     [HttpGet("{id:int}")]
     public async Task<ActionResult<object>> GetById(int id)

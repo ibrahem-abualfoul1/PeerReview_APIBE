@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PeerReview.Application.DTOs;
 using PeerReview.Domain.Entities;
+using PeerReview.Domain.Enums;
 using PeerReview.Infrastructure.Persistence;
 
 namespace PeerReview.Api.Controllers;
@@ -59,4 +60,21 @@ public class QuestionsController : ControllerBase
 
     [HttpDelete("{id:int}")]
     public async Task<ActionResult> SoftDelete(int id){ var q=await _db.Questions.FindAsync(id); if(q==null) return NotFound(); q.IsDeleted=true; q.DeletedAt=DateTime.UtcNow; await _db.SaveChangesAsync(); return NoContent(); }
+
+    [HttpGet("QuestionType")]
+    public async Task<ActionResult> GetQuestionType()
+    {
+        var list = Enum.GetValues(typeof(QuestionType))
+            .Cast<QuestionType>()
+            .Select(e => new
+            {
+                Id = (int)e,
+                Name = e.ToString()
+            });
+
+        return Ok(list);
+    }
+
+
+
 }

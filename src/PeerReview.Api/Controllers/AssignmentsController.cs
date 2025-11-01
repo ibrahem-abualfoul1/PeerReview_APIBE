@@ -28,9 +28,14 @@ public class AssignmentsController : ControllerBase
     [Authorize]
     public async Task<ActionResult<IEnumerable<object>>> ByUser(int userId)
     {
-        var list = await _db.Assignments.Where(a=>a.UserId==userId && a.IsActive)
-            .Join(_db.Questions, a=>a.QuestionId, q=>q.Id, (a,q)=> new { a.Id, a.QuestionId, q.Title, a.AssignedAt })
-            .ToListAsync();
+        var list = await _db.Assignments
+    .Where(a => a.UserId == userId && a.IsActive)
+    .Include(a => a.Question)
+        .ThenInclude(q => q.Items)
+    .Include(a => a.Question)
+        .ThenInclude(q => q.Category)
+    .AsNoTracking()
+    .ToListAsync();
         return Ok(list);
     }
 

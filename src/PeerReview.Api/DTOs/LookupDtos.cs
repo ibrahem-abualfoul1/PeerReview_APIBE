@@ -1,5 +1,5 @@
 namespace PeerReview.Application.DTOs;
-public record LookupCreateDto(string Name, string Type);
-public record LookupUpdateDto(string Name, string Type);
-public record SubLookupCreateDto(int LookupId, string Name);
-public record SubLookupUpdateDto(int LookupId ,string Name  );
+public record LookupCreateDto(string NameEn, string TypeEn, string NameAr, string TypeAr, string Code);
+public record LookupUpdateDto(string NameEn, string TypeEn, string NameAr, string TypeAr, string Code);
+public record SubLookupCreateDto( string Code, string NameAr, string NameEn);
+public record SubLookupUpdateDto( string Code, string NameAr, string NameEn);

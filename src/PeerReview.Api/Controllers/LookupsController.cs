@@ -139,13 +139,10 @@ public class LookupsController : ControllerBase
         var s = await _db.SubLookups.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (s is null) return NotFound();
 
-        var lookup = await _db.Lookups.FirstOrDefaultAsync(l => l.Code == dto.Code, ct);
-        if (lookup is null) return NotFound("Target parent lookup not found.");
+        
 
         s.NameAr = dto.NameAr;
         s.NameEn = dto.NameEn;
-
-        s.LookupId = lookup.Id;
 
         await _db.SaveChangesAsync(ct);
         return NoContent();
@@ -183,6 +180,6 @@ public class LookupsController : ControllerBase
             .FirstOrDefaultAsync(x => x.Id == id, ct);
 
         if (l is null) return NotFound();
-        return Ok(new { l.Id, l.NameAr, l.NameEn, l.LookupId });
+        return Ok(new { l.Id, l.NameAr, l.NameEn });
     }
 }

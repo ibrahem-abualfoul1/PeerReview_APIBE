@@ -115,17 +115,18 @@ public class LookupsController : ControllerBase
     }
 
     // POST: api/Lookups/{code}/sub
-    [HttpPost("{code}/sub")]
-    public async Task<ActionResult> CreateSub(string code, [FromBody] SubLookupCreateDto dto, CancellationToken ct)
+    [HttpPost("{id:int}/sub")]
+    public async Task<ActionResult> CreateSub(int id, [FromBody] SubLookupCreateDto dto, CancellationToken ct)
     {
         // dto.Code هو كود الـ Lookup الأب حسب تصميمك
-        if (!string.Equals(code, dto.Code, StringComparison.OrdinalIgnoreCase))
-            return BadRequest("Lookup code mismatch.");
+        
 
-        var lookup = await _db.Lookups.FirstOrDefaultAsync(l => l.Code == code, ct);
-        if (lookup is null) return NotFound("Parent lookup not found.");
+        var lookup = await _db.Lookups.FirstOrDefaultAsync(l => l.Id == id, ct);
+        if (lookup is null) 
+            return NotFound("Parent lookup not found.");
 
-        var s = new SubLookup { LookupId = lookup.Id, NameAr = dto.NameAr , NameEn = dto.NameEn };
+        var s = new SubLookup 
+        { LookupId = lookup.Id, NameAr = dto.NameAr , NameEn = dto.NameEn };
         _db.SubLookups.Add(s);
         await _db.SaveChangesAsync(ct);
 

@@ -27,7 +27,9 @@ public class QuestionsController : ControllerBase
                 q.TitleEn,
                 q.DescriptionEn,
                 q.CategoryId,
+                q.SubCategoryId,
                 q.Category != null ? q.Category.NameEn : null,
+                q.SubCategory  != null ? q.SubCategory.NameEn : null,
                 q.Items
                     .OrderBy(i => i.Id) // أو Order لو ضفته
                     .Select(i => new QuestionItemDto(
@@ -59,7 +61,9 @@ public class QuestionsController : ControllerBase
                  q.TitleEn,
                 q.DescriptionEn,
                 q.CategoryId,
+                q.SubCategoryId,
                 q.Category != null ? q.Category.NameEn : null,  // <-- CategoryName
+                q.SubCategory != null ? q.SubCategory.NameEn : null,  // <-- CategoryName
                 q.Items
                     .OrderBy(i => i.Id) // أو Order إن أضفته لاحقًا
                     .Select(i => new QuestionItemDto(
@@ -92,7 +96,8 @@ public class QuestionsController : ControllerBase
             DescriptionAr = dto.DescriptionAr ?? "",
             TitleEn = dto.TitleEn,
             DescriptionEn = dto.DescriptionEn ?? "",
-            CategoryId = dto.CategoryId
+            CategoryId = dto.CategoryId,
+            SubCategoryId = dto.SubCategoryId
         };
 
         foreach (var it in dto.Items)
@@ -132,6 +137,7 @@ public class QuestionsController : ControllerBase
         q.DescriptionEn = dto.DescriptionEn ?? "";
 
         q.CategoryId = dto.CategoryId;
+        q.SubCategoryId = dto.CategoryId;
 
         var existing = q.Items.Where(i => !i.IsDeleted).ToDictionary(i => i.Id);
 

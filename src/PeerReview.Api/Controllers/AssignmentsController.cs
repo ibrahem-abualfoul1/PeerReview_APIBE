@@ -34,6 +34,8 @@ public class AssignmentsController : ControllerBase
         .ThenInclude(q => q.Items)
     .Include(a => a.Question)
         .ThenInclude(q => q.Category)
+     .Include(a => a.Question)
+        .ThenInclude(q => q.SubCategory)
     .AsNoTracking()
     .ToListAsync();
         return Ok(list);

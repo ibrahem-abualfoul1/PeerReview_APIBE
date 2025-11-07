@@ -22,6 +22,7 @@ public record QuestionCreateDto(
     string TitleEn,
     string? DescriptionEn,
     int CategoryId,
+    int SubCategoryId,
     List<QuestionItemCreateDto> Items
 );
 
@@ -49,7 +50,9 @@ public record QuestionUpdateDto(
     string? DescriptionAr,
     string TitleEn,
     string? DescriptionEn,
-    int CategoryId, List<QuestionItemUpdateDto> Items
+    int CategoryId,
+    int SubCategoryId,
+    List<QuestionItemUpdateDto> Items
 );
 
 // عند العرض
@@ -60,6 +63,8 @@ public record QuestionDto(
     string TitleEn,
     string? DescriptionEn,
     int CategoryId,
+    int SubCategoryId,
     string? CategoryName,
+    string? SubCategoryName,
     List<QuestionItemDto> Items
 );

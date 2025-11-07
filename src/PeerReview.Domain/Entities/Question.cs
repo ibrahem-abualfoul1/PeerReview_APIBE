@@ -1,4 +1,4 @@
-using PeerReview.Domain.Common;
+﻿using PeerReview.Domain.Common;
 using PeerReview.Domain.Enums;
 namespace PeerReview.Domain.Entities;
 public class Question : EntityBase
@@ -8,12 +8,17 @@ public class Question : EntityBase
     public string DescriptionAr { get; set; } = "";
     public string DescriptionEn { get; set; } = "";
 
-    public Lookup Category { get; set; }
+    // Category مطلوبة
     public int CategoryId { get; set; }
+    public Lookup Category { get; set; } = null!;
+
+    // SubCategory اختيارية
+    public int? SubCategoryId { get; set; }            // ← صارت nullable
+    public SubLookup? SubCategory { get; set; }        // ← تبقى nullable
+
     public ICollection<QuestionItem> Items { get; set; } = new List<QuestionItem>();
-
-
 }
+
 public class QuestionItem : EntityBase
 {
     public string TextAr { get; set; } = "";

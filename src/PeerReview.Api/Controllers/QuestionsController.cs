@@ -5,6 +5,7 @@ using PeerReview.Application.DTOs;
 using PeerReview.Domain.Entities;
 using PeerReview.Domain.Enums;
 using PeerReview.Infrastructure.Persistence;
+using System.Linq;
 
 namespace PeerReview.Api.Controllers;
 [ApiController]
@@ -226,6 +227,14 @@ public class QuestionsController : ControllerBase
         return Ok(list);
     }
 
+    [HttpGet("GetQuestionCategories")]
+    public async Task<ActionResult> GetQuestionCategories(CancellationToken ct)
+    {
+        var queries = _db.QuestionItems
+            .AsNoTracking()
+            .Where(qi => !qi.IsDeleted).ToList();
 
+        return Ok(queries);
+    }
 
 }

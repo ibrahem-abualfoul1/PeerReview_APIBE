@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PeerReview.Application.Abstractions;
@@ -25,13 +25,43 @@ public class AnswersController : ControllerBase
     }
 
     [HttpPost]
-    public async Task<ActionResult> Create(AnswerCreateDto dto)
+    [HttpPost]
+    public async Task<ActionResult> Create(List<AnswerCreateDto> dtoList)
     {
-        var a = await _db.Answers.Include(x => x.Question).Include(x => x.QuestionItem).Include(x => x.User).FirstOrDefaultAsync(x => x.UserId == CurrentUserId && x.QuestionId == dto.QuestionId && x.QuestionItemId == dto.QuestionItemId);
-        if (a == null) { a = new Answer { UserId = CurrentUserId, QuestionId = dto.QuestionId, QuestionItemId = dto.QuestionItemId, Value = dto.Value, SubmittedAt = DateTime.UtcNow }; _db.Answers.Add(a); }
-        else { a.Value = dto.Value; a.SubmittedAt = DateTime.UtcNow; }
-        await _db.SaveChangesAsync(); return Ok(new { a.Id });
+        if (dtoList == null || !dtoList.Any())
+            return BadRequest("لا توجد بيانات للإدخال.");
+
+        foreach (var dto in dtoList)
+        {
+            var existing = await _db.Answers
+                .FirstOrDefaultAsync(x =>
+                    x.UserId == CurrentUserId &&
+                    x.QuestionId == dto.QuestionId &&
+                    x.QuestionItemId == dto.QuestionItemId);
+
+            if (existing == null)
+            {
+                var newAnswer = new Answer
+                {
+                    UserId = CurrentUserId,
+                    QuestionId = dto.QuestionId,
+                    QuestionItemId = dto.QuestionItemId,
+                    Value = dto.Value,
+                    SubmittedAt = DateTime.UtcNow
+                };
+                _db.Answers.Add(newAnswer);
+            }
+            else
+            {
+                existing.Value = dto.Value;
+                existing.SubmittedAt = DateTime.UtcNow;
+            }
+        }
+
+        await _db.SaveChangesAsync();
+        return Ok(new { message = "تم حفظ الإجابات بنجاح." });
     }
+
 
     [HttpPut("{id:int}")]
     public async Task<ActionResult> Update(int id, AnswerUpdateDto dto)

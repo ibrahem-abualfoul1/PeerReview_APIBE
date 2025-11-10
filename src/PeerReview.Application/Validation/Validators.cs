@@ -85,34 +85,38 @@ namespace PeerReview.Application.Validation
     {
         public QuestionItemUpdateDtoValidator()
         {
-            
+
             RuleFor(x => x.Id)
                 .Must(id => !id.HasValue || id.Value > 0)
                 .WithMessage("Item Id must be null (for new) or a positive integer.");
 
-            Include(new QuestionItemUpdateDtoValidator()); 
+            Include(new QuestionItemUpdateDtoValidator());
         }
     }
+
 
     public class QuestionCreateDtoValidator : AbstractValidator<QuestionCreateDto>
     {
         public QuestionCreateDtoValidator()
         {
-            RuleFor(x => x.TitleAr)
-                .NotEmpty()
-                .MaximumLength(256);
-            RuleFor(x => x.TitleEn)
-                .NotEmpty()
-                .MaximumLength(256);
+            RuleFor(x => x.TitleAr).NotEmpty().MaximumLength(256);
+            RuleFor(x => x.TitleEn).NotEmpty().MaximumLength(256);
 
             RuleFor(x => x.CategoryId)
                 .GreaterThan(0).WithMessage("CategoryId must be a valid positive number.");
 
+            RuleFor(x => x.SubCategoryId)
+                .Must(id => id == null || id > 0)
+                .WithMessage("SubCategoryId must be null or a valid positive number.");
+
             RuleFor(x => x.Items)
-                .NotEmpty().WithMessage("At least one item is required.");
+                .NotEmpty().WithMessage("At least one item is required.")
+                .Must(items => items.Distinct().Count() == items.Count)
+                .WithMessage("Duplicate item IDs are not allowed.");
 
             RuleForEach(x => x.Items)
-                .SetValidator(new QuestionItemCreateDtoValidator());
+                .Must(id => id > 0).WithMessage("Each item id must be a positive number.");
+            // ملاحظة: احذف أي SetValidator(...) لأن Items = List<int>
         }
     }
 
@@ -120,23 +124,26 @@ namespace PeerReview.Application.Validation
     {
         public QuestionUpdateDtoValidator()
         {
-            RuleFor(x => x.TitleAr)
-                .NotEmpty()
-                .MaximumLength(256);
-            RuleFor(x => x.TitleEn)
-               .NotEmpty()
-               .MaximumLength(256);
+            RuleFor(x => x.TitleAr).NotEmpty().MaximumLength(256);
+            RuleFor(x => x.TitleEn).NotEmpty().MaximumLength(256);
 
             RuleFor(x => x.CategoryId)
                 .GreaterThan(0).WithMessage("CategoryId must be a valid positive number.");
 
+            RuleFor(x => x.SubCategoryId)
+                .Must(id => id == null || id > 0)
+                .WithMessage("SubCategoryId must be null or a valid positive number.");
+
             RuleFor(x => x.Items)
-                .NotEmpty().WithMessage("At least one item is required.");
+                .NotEmpty().WithMessage("At least one item is required.")
+                .Must(items => items.Distinct().Count() == items.Count)
+                .WithMessage("Duplicate item IDs are not allowed.");
 
             RuleForEach(x => x.Items)
-                .SetValidator(new QuestionItemUpdateDtoValidator());
+                .Must(id => id > 0).WithMessage("Each item id must be a positive number.");
         }
     }
+
 
     // ===== Answers =====
     public class AnswerCreateDtoValidator : AbstractValidator<AnswerCreateDto>

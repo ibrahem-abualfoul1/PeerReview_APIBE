@@ -22,24 +22,14 @@ public class QuestionsController : ControllerBase
         var items = await _db.Questions
             .AsNoTracking()
             .Select(q => new QuestionDto(
-                q.Id,
-                q.TitleAr,
-                q.DescriptionAr,
-                q.TitleEn,
-                q.DescriptionEn,
-                q.CategoryId,
-                q.SubCategoryId,
+                q.Id, q.TitleAr, q.DescriptionAr, q.TitleEn, q.DescriptionEn,
+                q.CategoryId, q.SubCategoryId,
                 q.Category != null ? q.Category.NameEn : null,
-                q.SubCategory  != null ? q.SubCategory.NameEn : null,
+                q.SubCategory != null ? q.SubCategory.NameEn : null,
                 q.Items
-                    .OrderBy(i => i.Id) // أو Order لو ضفته
+                    .OrderBy(i => i.Id)
                     .Select(i => new QuestionItemDto(
-                        i.Id,
-                        i.TextAr,
-                         i.TextEn,
-                        i.Type,
-                        i.IsRequired,
-                        i.OptionsCsvAr ,i.OptionsCsvEn
+                        i.Id, i.TextAr, i.TextEn, i.Type, i.IsRequired, i.OptionsCsvAr, i.OptionsCsvEn
                     ))
                     .ToList()
             ))
@@ -56,24 +46,14 @@ public class QuestionsController : ControllerBase
             .AsNoTracking()
             .Where(q => q.Id == id)
             .Select(q => new QuestionDto(
-                q.Id,
-                q.TitleAr,
-                q.DescriptionAr,
-                 q.TitleEn,
-                q.DescriptionEn,
-                q.CategoryId,
-                q.SubCategoryId,
-                q.Category != null ? q.Category.NameEn : null,  // <-- CategoryName
-                q.SubCategory != null ? q.SubCategory.NameEn : null,  // <-- CategoryName
+                q.Id, q.TitleAr, q.DescriptionAr, q.TitleEn, q.DescriptionEn,
+                q.CategoryId, q.SubCategoryId,
+                q.Category != null ? q.Category.NameEn : null,
+                q.SubCategory != null ? q.SubCategory.NameEn : null,
                 q.Items
-                    .OrderBy(i => i.Id) // أو Order إن أضفته لاحقًا
+                    .OrderBy(i => i.Id)
                     .Select(i => new QuestionItemDto(
-                        i.Id,
-                        i.TextAr, i.TextEn,
-
-                        i.Type,
-                        i.IsRequired,
-                        i.OptionsCsvAr, i.OptionsCsvEn
+                        i.Id, i.TextAr, i.TextEn, i.Type, i.IsRequired, i.OptionsCsvAr, i.OptionsCsvEn
                     ))
                     .ToList()
             ))
@@ -83,13 +63,14 @@ public class QuestionsController : ControllerBase
         return Ok(dto);
     }
 
-
-
     [HttpPost]
     public async Task<ActionResult> Create([FromBody] QuestionCreateDto dto, CancellationToken ct)
     {
         if (dto.Items is null || dto.Items.Count == 0)
             return BadRequest("يجب إضافة عنصر واحد على الأقل للسؤال.");
+
+        var categoryExists = await _db.Lookups.AnyAsync(l => l.Id == dto.CategoryId, ct);
+        if (!categoryExists) return BadRequest("CategoryId غير صالح.");
 
         var q = new Question
         {
@@ -101,23 +82,19 @@ public class QuestionsController : ControllerBase
             SubCategoryId = dto.SubCategoryId
         };
 
-        foreach (var it in dto.Items)
+        var itemIds = dto.Items.Distinct().ToList();
+        var items = await _db.QuestionItems.Where(i => itemIds.Contains(i.Id)).ToListAsync(ct);
+        if (items.Count != itemIds.Count)
         {
-            q.Items.Add(new QuestionItem
-            {
-                TextAr = it.TextAr,
-                TextEn = it.TextEn,
-
-                Type = it.Type,
-                IsRequired = it.IsRequired,
-                OptionsCsvAr = it.OptionsCsvAr,
-                OptionsCsvEn = it.OptionsCsvEn
-            });
+            var found = items.Select(i => i.Id).ToHashSet();
+            var missing = itemIds.Where(id => !found.Contains(id));
+            return BadRequest($"عناصر غير موجودة: {string.Join(", ", missing)}");
         }
+
+        foreach (var it in items) q.Items.Add(it);
 
         _db.Questions.Add(q);
         await _db.SaveChangesAsync(ct);
-
         return CreatedAtAction(nameof(GetById), new { id = q.Id }, new { q.Id });
     }
 
@@ -136,82 +113,50 @@ public class QuestionsController : ControllerBase
         q.DescriptionAr = dto.DescriptionAr ?? "";
         q.TitleEn = dto.TitleEn;
         q.DescriptionEn = dto.DescriptionEn ?? "";
-
         q.CategoryId = dto.CategoryId;
-        q.SubCategoryId = dto.CategoryId;
+        q.SubCategoryId = dto.SubCategoryId; // ← التصحيح
 
-        var existing = q.Items.Where(i => !i.IsDeleted).ToDictionary(i => i.Id);
+        var incomingIds = (dto.Items ?? new List<int>()).Distinct().ToHashSet();
+        var currentIds = q.Items.Select(i => i.Id).ToHashSet();
 
-        var seenIds = new HashSet<int>();
-        foreach (var it in dto.Items)
+        // to add
+        var toAddIds = incomingIds.Except(currentIds).ToList();
+        if (toAddIds.Count > 0)
         {
-            if (it.Id is null or 0)
+            var toAdd = await _db.QuestionItems.Where(i => toAddIds.Contains(i.Id)).ToListAsync(ct);
+            if (toAdd.Count != toAddIds.Count)
             {
-                q.Items.Add(new QuestionItem
-                {
-                    TextAr = it.TextAr,
-                    TextEn = it.TextEn,
-
-                    Type = it.Type,
-                    IsRequired = it.IsRequired,
-                    OptionsCsvAr = it.OptionsCsvAr,
-                    OptionsCsvEn = it.OptionsCsvEn
-                });
+                var found = toAdd.Select(i => i.Id).ToHashSet();
+                var missing = toAddIds.Where(id => !found.Contains(id));
+                return BadRequest($"عناصر غير موجودة: {string.Join(", ", missing)}");
             }
-            else if (existing.TryGetValue(it.Id.Value, out var entity))
-            {
-                entity.TextAr = it.TextAr;
-                entity.TextEn = it.TextEn;
-
-                entity.Type = it.Type;
-                entity.IsRequired = it.IsRequired;
-                entity.OptionsCsvEn = it.OptionsCsvEn;
-                entity.OptionsCsvAr = it.OptionsCsvAr;
-
-                seenIds.Add(entity.Id);
-            }
-            else
-            {
-                return BadRequest($"Item Id {it.Id} غير موجود تحت هذا السؤال.");
-            }
+            foreach (var it in toAdd) q.Items.Add(it);
         }
 
-        foreach (var e in existing.Values.Where(x => !seenIds.Contains(x.Id)))
-        {
-            e.IsDeleted = true;
-            e.DeletedAt = DateTime.UtcNow;
-        }
+        // to remove
+        var toRemove = q.Items.Where(i => !incomingIds.Contains(i.Id)).ToList();
+        foreach (var it in toRemove) q.Items.Remove(it);
 
         await _db.SaveChangesAsync(ct);
         return NoContent();
     }
+
 
 
 
     [HttpDelete("{id:int}")]
     public async Task<ActionResult> SoftDelete(int id, CancellationToken ct)
     {
-        var q = await _db.Questions
-            .Include(x => x.Items) 
-            .FirstOrDefaultAsync(x => x.Id == id, ct);
+        var q = await _db.Questions.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (q is null) return NotFound();
 
-        if (q is null)
-            return NotFound();
-
-        
         q.IsDeleted = true;
         q.DeletedAt = DateTime.UtcNow;
-
-       
-        foreach (var item in q.Items.Where(i => !i.IsDeleted))
-        {
-            item.IsDeleted = true;
-            item.DeletedAt = DateTime.UtcNow;
-        }
 
         await _db.SaveChangesAsync(ct);
         return NoContent();
     }
+
 
     [HttpGet("QuestionType")]
     public async Task<ActionResult> GetQuestionType()
@@ -230,11 +175,12 @@ public class QuestionsController : ControllerBase
     [HttpGet("GetQuestionCategories")]
     public async Task<ActionResult> GetQuestionCategories(CancellationToken ct)
     {
-        var queries = _db.QuestionItems
+        var categories = await _db.QuestionItems
             .AsNoTracking()
-            .Where(qi => !qi.IsDeleted).ToList();
+            .ToListAsync(ct);
 
-        return Ok(queries);
+        return Ok(categories);
     }
+
 
 }

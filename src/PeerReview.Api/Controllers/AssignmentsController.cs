@@ -31,9 +31,9 @@ public class AssignmentsController : ControllerBase
         var list = await _db.Assignments
     .Where(a => a.UserId == userId && a.IsActive)
     .Include(a => a.Question)
-        .ThenInclude(q => q.Items)
-    .Include(a => a.Question)
         .ThenInclude(q => q.Category)
+      .Include(a => a.Question)
+        .ThenInclude(q => q.Items)
      .Include(a => a.Question)
         .ThenInclude(q => q.SubCategory)
     .AsNoTracking()

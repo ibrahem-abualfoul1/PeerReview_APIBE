@@ -29,9 +29,6 @@ public class QuestionItem : EntityBase
     public string? OptionsCsvAr { get; set; }
     public string? OptionsCsvEn { get; set; }
 
-    public int QuestionId { get; set; }
-    public Question Question
-    {
-        get; set;
-    }
+    public ICollection<Question> Questions { get; set; } = new List<Question>();
+
 }

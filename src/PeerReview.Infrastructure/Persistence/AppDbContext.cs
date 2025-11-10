@@ -16,6 +16,8 @@ namespace PeerReview.Infrastructure.Persistence
         public DbSet<Lookup> Lookups => Set<Lookup>();
         public DbSet<SubLookup> SubLookups => Set<SubLookup>();
         public DbSet<FileEntry> FileEntries => Set<FileEntry>();
+        public DbSet<AnswerScore> AnswerScores => Set<AnswerScore>();
+
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -31,66 +33,50 @@ namespace PeerReview.Infrastructure.Persistence
                  .HasFilter("[IsDeleted] = 0");
             });
 
-            // ===== Questions =====
-            // ===== Questions =====
-            modelBuilder.Entity<Question>(b =>
-            {
-                b.Property(x => x.TitleAr).IsRequired().HasMaxLength(256)
-                 .HasConversion(v => v == null ? null : v.Trim(), v => v);
-
-                b.Property(x => x.TitleEn).IsRequired().HasMaxLength(256)
-                 .HasConversion(v => v == null ? null : v.Trim(), v => v);
-
-                b.Property(x => x.DescriptionAr).HasMaxLength(2000)
-                 .HasConversion(v => v == null ? null : v.Trim(), v => v);
-
-                b.Property(x => x.DescriptionEn).HasMaxLength(2000)
-                 .HasConversion(v => v == null ? null : v.Trim(), v => v);
-
-                // Category مطلوبة
-                b.HasOne(x => x.Category)
-                 .WithMany()
-                 .HasForeignKey(x => x.CategoryId)
-                 .OnDelete(DeleteBehavior.Restrict);
-
-                // SubCategory اختيارية (يكفي جعل FK nullable؛ ويمكن صراحةً وضع IsRequired(false))
-                b.HasOne(x => x.SubCategory)
-                 .WithMany()
-                 .HasForeignKey(x => x.SubCategoryId)
-                 .OnDelete(DeleteBehavior.Restrict); // أو SetNull إذا تحب
-                                                     // .IsRequired(false); // (اختياري توضيحيًا)
-
-                b.HasIndex(x => x.CategoryId);
-                b.HasIndex(x => x.SubCategoryId);
-            });
-
-
             // ===== QuestionItems =====
             modelBuilder.Entity<QuestionItem>(b =>
             {
-                b.Property(x => x.TextAr)
-                 .IsRequired()
-                 .HasMaxLength(256)
+                b.Property(x => x.TextAr).IsRequired().HasMaxLength(256)
                  .HasConversion(v => v == null ? null : v.Trim(), v => v);
 
-                b.Property(x => x.TextEn)
-                 .IsRequired()
-                 .HasMaxLength(256)
+                b.Property(x => x.TextEn).IsRequired().HasMaxLength(256)
                  .HasConversion(v => v == null ? null : v.Trim(), v => v);
 
-                b.Property(x => x.OptionsCsvAr)
-                 .HasMaxLength(1024)
+                b.Property(x => x.OptionsCsvAr).HasMaxLength(1024)
                  .HasConversion(v => v == null ? null : v.Trim(), v => v);
 
-                b.Property(x => x.OptionsCsvEn)
-                 .HasMaxLength(1024)
+                b.Property(x => x.OptionsCsvEn).HasMaxLength(1024)
                  .HasConversion(v => v == null ? null : v.Trim(), v => v);
-
-                b.HasOne(qi => qi.Question)
-                 .WithMany(q => q.Items)
-                 .HasForeignKey(qi => qi.QuestionId)
-                 .OnDelete(DeleteBehavior.Cascade);
             });
+
+            // ===== Many-to-Many: Question ↔ QuestionItem =====
+            modelBuilder.Entity<Question>()
+                .HasMany(q => q.Items)
+                .WithMany(i => i.Questions)
+                .UsingEntity<Dictionary<string, object>>(
+                    "QuestionQuestionItems",
+                    right => right
+                        .HasOne<QuestionItem>()
+                        .WithMany()
+                        .HasForeignKey("QuestionItemId")
+                        .OnDelete(DeleteBehavior.Restrict),   // لا تحذف الـ Item عند حذف سؤال
+                    left => left
+                        .HasOne<Question>()
+                        .WithMany()
+                        .HasForeignKey("QuestionId")
+                        .OnDelete(DeleteBehavior.Cascade),    // احذف روابط السؤال عند حذفه
+                    join =>
+                    {
+                        join.ToTable("QuestionQuestionItems");
+                        join.HasKey("QuestionId", "QuestionItemId");
+                        join.HasIndex("QuestionId");
+                        join.HasIndex("QuestionItemId");
+                    }
+                );
+
+
+
+
 
             // ===== Assignments =====
             modelBuilder.Entity<Assignment>(b =>
@@ -213,6 +199,25 @@ namespace PeerReview.Infrastructure.Persistence
                  .WithMany()
                  .HasForeignKey(a => a.FileId)
                  .OnDelete(DeleteBehavior.SetNull);
+            });
+
+            modelBuilder.Entity<AnswerScore>(b =>
+            {
+                b.HasIndex(x => x.AnswerId);
+                b.HasIndex(x => new { x.AnswerId, x.ReviewerUserId }).IsUnique()
+                 .HasFilter("[IsDeleted] = 0"); // لو EntityBase عندك فيه IsDeleted
+
+                b.Property(x => x.Score).HasColumnType("decimal(10,2)");
+
+                b.HasOne(x => x.Answer)
+                 .WithMany() // ما نضيف Collection في Answer حتى لا نعدل الكيان
+                 .HasForeignKey(x => x.AnswerId)
+                 .OnDelete(DeleteBehavior.Cascade);
+
+                b.HasOne(x => x.Reviewer)
+                 .WithMany()
+                 .HasForeignKey(x => x.ReviewerUserId)
+                 .OnDelete(DeleteBehavior.Restrict);
             });
 
             // ===== Global soft-delete filters =====

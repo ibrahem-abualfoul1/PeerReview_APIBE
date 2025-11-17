@@ -5,18 +5,17 @@ using PeerReview.Application.DTOs;
 using PeerReview.Domain.Entities;
 using PeerReview.Domain.Enums;
 using PeerReview.Infrastructure.Persistence;
-using System.Linq;
 
 namespace PeerReview.Api.Controllers;
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Admin")]
 public class QuestionsController : ControllerBase
 {
     private readonly AppDbContext _db;
     public QuestionsController(AppDbContext db) => _db = db;
 
     [HttpGet]
+    [Authorize(Roles = "Admin")]
     public async Task<ActionResult<IEnumerable<QuestionDto>>> GetAll(CancellationToken ct)
     {
         var items = await _db.Questions

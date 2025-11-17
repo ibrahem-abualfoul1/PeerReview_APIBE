@@ -7,7 +7,7 @@ using PeerReview.Infrastructure.Persistence;
 namespace PeerReview.Api.Controllers;
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Admin")]
+//[Authorize(Roles = "Admin")]
 public class AssignmentsController : ControllerBase
 {
     private readonly AppDbContext _db;
@@ -25,7 +25,7 @@ public class AssignmentsController : ControllerBase
     }
 
     [HttpGet("by-user/{userId:int}")]
-    [Authorize]
+    //[Authorize]
     public async Task<ActionResult<IEnumerable<object>>> ByUser(int userId)
     {
         var list = await _db.Assignments
@@ -52,4 +52,22 @@ public class AssignmentsController : ControllerBase
 
     [HttpPost("{id:int}/deactivate")] public async Task<ActionResult> Deactivate(int id){ var a=await _db.Assignments.FindAsync(id); if(a==null) return NotFound(); a.IsActive=false; await _db.SaveChangesAsync(); return NoContent(); }
     [HttpPost("{id:int}/activate")] public async Task<ActionResult> Activate(int id){ var a=await _db.Assignments.FindAsync(id); if(a==null) return NotFound(); a.IsActive=true; await _db.SaveChangesAsync(); return NoContent(); }
+
+    [HttpGet("GetAll")]
+    //[Authorize]
+    public async Task<ActionResult<IEnumerable<object>>> GetAll()
+    {
+        var list = await _db.Assignments
+    .Include(a => a.Question)
+        .ThenInclude(q => q.Category)
+      .Include(a => a.Question)
+        .ThenInclude(q => q.Items)
+     .Include(a => a.Question)
+        .ThenInclude(q => q.SubCategory)
+    .AsNoTracking()
+    .ToListAsync();
+        return Ok(list);
+    }
+
+
 }

@@ -68,7 +68,9 @@ public class AnswerScoringController : ControllerBase
                 ItemTextAr = a.QuestionItem != null ? a.QuestionItem.TextAr : null,
                 ItemTextEn = a.QuestionItem != null ? a.QuestionItem.TextEn : null,
                 a.Value,
-                a.SubmittedAt
+                a.SubmittedAt,
+                a.QuestionItem,
+                a.Question
             })
             .OrderBy(x => x.QuestionId)
             .ThenBy(x => x.QuestionItemId)
@@ -258,7 +260,11 @@ public class AnswerScoringController : ControllerBase
                 s.Notes,
                 s.ScoredAt,
                 ReviewerId = s.ReviewerUserId,
-                ReviewerName = r.FullName ?? r.UserName
+                ReviewerName = r.FullName ?? r.UserName,
+               a.QuestionItem,
+                a.Question
+
+
             };
 
 

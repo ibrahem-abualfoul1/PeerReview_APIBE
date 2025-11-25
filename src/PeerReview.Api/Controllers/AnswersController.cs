@@ -25,7 +25,7 @@ public class AnswersController : ControllerBase
             .Include(x => x.Question)
             .Include(x => x.QuestionItem)
             .Include(x => x.User)
-            .Include(x => x.File)
+            .Include(x => x.Files).ThenInclude(x=>x.File)
             .ToListAsync();
 
         return list;
@@ -102,12 +102,43 @@ public class AnswersController : ControllerBase
             if (file == null || file.Length == 0)
                 return BadRequest("Empty file");
 
+            // 1) نجيب الـ Answer الحالي (لو موجود) مع الملفات المرتبطة
+            var answer = await _db.Answers
+                .Include(a => a.Files)
+                    .ThenInclude(af => af.File)
+                .FirstOrDefaultAsync(a =>
+                    a.UserId == CurrentUserId &&
+                    a.QuestionId == questionId &&
+                    a.QuestionItemId == questionItemId
+                );
+
+            // لو ما في Answer نعمل واحد جديد
+            if (answer == null)
+            {
+                answer = new Answer
+                {
+                    UserId = CurrentUserId,
+                    QuestionId = questionId,
+                    QuestionItemId = questionItemId,
+                    SubmittedAt = DateTime.UtcNow
+                };
+
+                _db.Answers.Add(answer);
+                await _db.SaveChangesAsync(); // عشان نضمن أن الـ Id اتولد
+            }
+
+            // ✅ **مهم**:
+            // ما عاد نحذف أي ملفات قديمة
+            // كل Upload راح يضيف ملف جديد فوق الموجودين
+
+            // 2) حفظ الملف الجديد في التخزين الفيزيائي
             var (rel, length, contentType) = await _files.SaveAsync(
                 file.FileName,
                 file.OpenReadStream(),
                 file.ContentType
             );
 
+            // 3) إنشاء FileEntry جديد
             var fe = new FileEntry
             {
                 FileName = file.FileName,
@@ -120,48 +151,48 @@ public class AnswersController : ControllerBase
             _db.FileEntries.Add(fe);
             await _db.SaveChangesAsync();
 
-            var a = await _db.Answers.FirstOrDefaultAsync(x =>
-                x.UserId == CurrentUserId &&
-                x.QuestionId == questionId &&
-                x.QuestionItemId == questionItemId
-            );
+            // 4) ربطه بالـ Answer عن طريق AnswerFile (إضافة جديدة بدون حذف القديم)
+            var answerFile = new AnswerFile
+            {
+                AnswerId = answer.Id,
+                FileId = fe.Id
+            };
 
-            if (a == null)
-            {
-                a = new Answer
-                {
-                    UserId = CurrentUserId,
-                    QuestionId = questionId,
-                    QuestionItemId = questionItemId,
-                    FileId = fe.Id,
-                    SubmittedAt = DateTime.UtcNow
-                };
-                _db.Answers.Add(a);
-            }
-            else
-            {
-                a.FileId = fe.Id;
-                a.SubmittedAt = DateTime.UtcNow;
-            }
+            _db.AnswerFiles.Add(answerFile);
+
+            // تحديث وقت الإرسال
+            answer.SubmittedAt = DateTime.UtcNow;
 
             await _db.SaveChangesAsync();
 
-            return Ok(new { a.Id, FileId = fe.Id, FileUrl = "/uploads/" + rel });
+            return Ok(new
+            {
+                AnswerId = answer.Id,
+                FileId = fe.Id,
+                FileUrl = "/uploads/" + rel
+            });
         }
         catch (Exception ex)
         {
-            // لو عندك ILogger:
-            // _logger.LogError(ex, "Error in upload");
-
             return StatusCode(500, new { error = ex.Message, stack = ex.StackTrace });
         }
     }
 
 
 
+
     [HttpGet("getByUserId")]
     public async Task<ActionResult<IEnumerable<Answer>>> GetByUserId()
     {
-        return await _db.Answers.Include(x => x.Question).Include(x => x.QuestionItem).Include(x => x.User).Where(x=>x.UserId == CurrentUserId).ToListAsync();
+        var list = await _db.Answers
+            .Include(x => x.Question)
+            .Include(x => x.QuestionItem)
+            .Include(x => x.User)
+            .Include(x => x.Files).ThenInclude(f => f.File)
+            .Where(x => x.UserId == CurrentUserId)
+            .ToListAsync();
+
+        return list;
     }
+
 }

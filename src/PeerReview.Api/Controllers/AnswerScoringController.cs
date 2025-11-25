@@ -58,7 +58,7 @@ public class AnswerScoringController : ControllerBase
     [HttpGet("by-user-unscored")]
     public async Task<IActionResult> GetUnscoredAnswersByUser([FromQuery] int userId, CancellationToken ct)
     {
-        var data = await _db.Answers.Include(x=>x.File)
+        var data = await _db.Answers.Include(x=>x.Files).ThenInclude(x=>x.File)
             .AsNoTracking()
             .Where(a => a.UserId == userId)
             .Where(a => !_db.AnswerScores.Any(s => s.AnswerId == a.Id))
@@ -72,8 +72,7 @@ public class AnswerScoringController : ControllerBase
                 a.SubmittedAt,
                 a.QuestionItem,
                 a.Question,
-                a.File,
-                a.FileId
+                a.Files
 
             })
             .OrderBy(x => x.QuestionId)
@@ -246,7 +245,7 @@ public class AnswerScoringController : ControllerBase
     {
         var q =
             from s in _db.AnswerScores.AsNoTracking()
-            join a in _db.Answers.Include(x=>x.File).AsNoTracking() on s.AnswerId equals a.Id
+            join a in _db.Answers.Include(x=>x.Files).ThenInclude(x=>x.File).AsNoTracking() on s.AnswerId equals a.Id
             join qi in _db.QuestionItems.AsNoTracking() on a.QuestionItemId equals qi.Id into _qi
             from qi in _qi.DefaultIfEmpty()
             join r in _db.Users.AsNoTracking() on s.ReviewerUserId equals r.Id
@@ -266,8 +265,7 @@ public class AnswerScoringController : ControllerBase
                 ReviewerName = r.FullName ?? r.UserName,
                a.QuestionItem,
                 a.Question,
-                a.File,
-                a.FileId
+                a.Files
 
 
             };

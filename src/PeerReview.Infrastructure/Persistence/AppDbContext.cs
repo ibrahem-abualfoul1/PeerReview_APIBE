@@ -17,7 +17,7 @@ namespace PeerReview.Infrastructure.Persistence
         public DbSet<SubLookup> SubLookups => Set<SubLookup>();
         public DbSet<FileEntry> FileEntries => Set<FileEntry>();
         public DbSet<AnswerScore> AnswerScores => Set<AnswerScore>();
-
+        public DbSet<AnswerFile> AnswerFiles => Set<AnswerFile>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -36,14 +36,13 @@ namespace PeerReview.Infrastructure.Persistence
             // ===== QuestionItems =====
             modelBuilder.Entity<QuestionItem>(b =>
             {
-                
-
-                b.Property(x => x.TextEn).IsRequired().HasMaxLength(256)
+                b.Property(x => x.TextEn)
+                 .IsRequired()
+                 .HasMaxLength(256)
                  .HasConversion(v => v == null ? null : v.Trim(), v => v);
 
-                
-
-                b.Property(x => x.OptionsCsvEn).HasMaxLength(1024)
+                b.Property(x => x.OptionsCsvEn)
+                 .HasMaxLength(1024)
                  .HasConversion(v => v == null ? null : v.Trim(), v => v);
             });
 
@@ -57,12 +56,12 @@ namespace PeerReview.Infrastructure.Persistence
                         .HasOne<QuestionItem>()
                         .WithMany()
                         .HasForeignKey("QuestionItemId")
-                        .OnDelete(DeleteBehavior.Restrict),   // لا تحذف الـ Item عند حذف سؤال
+                        .OnDelete(DeleteBehavior.Restrict),
                     left => left
                         .HasOne<Question>()
                         .WithMany()
                         .HasForeignKey("QuestionId")
-                        .OnDelete(DeleteBehavior.Cascade),    // احذف روابط السؤال عند حذفه
+                        .OnDelete(DeleteBehavior.Cascade),
                     join =>
                     {
                         join.ToTable("QuestionQuestionItems");
@@ -71,10 +70,6 @@ namespace PeerReview.Infrastructure.Persistence
                         join.HasIndex("QuestionItemId");
                     }
                 );
-
-
-
-
 
             // ===== Assignments =====
             modelBuilder.Entity<Assignment>(b =>
@@ -90,14 +85,10 @@ namespace PeerReview.Infrastructure.Persistence
             // ===== Lookups =====
             modelBuilder.Entity<Lookup>(b =>
             {
-                
-
                 b.Property(l => l.NameEn)
                  .IsRequired()
                  .HasMaxLength(128)
                  .HasConversion(v => v == null ? null : v.Trim(), v => v);
-
-                
 
                 b.Property(l => l.TypeEn)
                  .IsRequired()
@@ -116,8 +107,6 @@ namespace PeerReview.Infrastructure.Persistence
                  .IsUnique()
                  .HasFilter("[IsDeleted] = 0");
 
-            
-
                 b.HasIndex(l => l.Code)
                  .IsUnique()
                  .HasFilter("[IsDeleted] = 0");
@@ -126,8 +115,6 @@ namespace PeerReview.Infrastructure.Persistence
             // ===== SubLookups =====
             modelBuilder.Entity<SubLookup>(b =>
             {
-               
-
                 b.Property(s => s.NameEn)
                  .IsRequired()
                  .HasMaxLength(128)
@@ -137,8 +124,6 @@ namespace PeerReview.Infrastructure.Persistence
                  .WithMany(l => l.SubLookups)
                  .HasForeignKey(s => s.LookupId)
                  .OnDelete(DeleteBehavior.Cascade);
-
-               
 
                 b.HasIndex(s => new { s.LookupId, s.NameEn })
                  .IsUnique()
@@ -159,43 +144,38 @@ namespace PeerReview.Infrastructure.Persistence
                 b.HasIndex(a => a.QuestionId);
                 b.HasIndex(a => a.UserId);
                 b.HasIndex(a => a.QuestionItemId);
-                b.HasIndex(a => a.FileId);
 
                 // Answer ↔ Question (Required)
                 b.HasOne(a => a.Question)
-                 .WithMany() // إن كان عندك ICollection<Answer> Answers في Question يمكنك استبدالها بـ .WithMany(q => q.Answers)
+                 .WithMany()
                  .HasForeignKey(a => a.QuestionId)
                  .OnDelete(DeleteBehavior.Restrict);
 
                 // Answer ↔ User (Required)
                 b.HasOne(a => a.User)
-                 .WithMany() // إن كان عندك ICollection<Answer> Answers في User يمكنك استبدالها بـ .WithMany(u => u.Answers)
+                 .WithMany()
                  .HasForeignKey(a => a.UserId)
                  .OnDelete(DeleteBehavior.Restrict);
 
                 // Answer ↔ QuestionItem (Optional)
                 b.HasOne(a => a.QuestionItem)
-                 .WithMany() // إن أضفت ICollection<Answer> Answers في QuestionItem استبدلها بـ .WithMany(qi => qi.Answers)
-                 .HasForeignKey(a => a.QuestionItemId)
-                 .OnDelete(DeleteBehavior.SetNull);
-
-                // Answer ↔ FileEntry (Optional)
-                b.HasOne(a => a.File)
                  .WithMany()
-                 .HasForeignKey(a => a.FileId)
+                 .HasForeignKey(a => a.QuestionItemId)
                  .OnDelete(DeleteBehavior.SetNull);
             });
 
+            // ===== AnswerScores =====
             modelBuilder.Entity<AnswerScore>(b =>
             {
                 b.HasIndex(x => x.AnswerId);
-                b.HasIndex(x => new { x.AnswerId, x.ReviewerUserId }).IsUnique()
-                 .HasFilter("[IsDeleted] = 0"); // لو EntityBase عندك فيه IsDeleted
+                b.HasIndex(x => new { x.AnswerId, x.ReviewerUserId })
+                 .IsUnique()
+                 .HasFilter("[IsDeleted] = 0");
 
                 b.Property(x => x.Score).HasColumnType("decimal(10,2)");
 
                 b.HasOne(x => x.Answer)
-                 .WithMany() // ما نضيف Collection في Answer حتى لا نعدل الكيان
+                 .WithMany()
                  .HasForeignKey(x => x.AnswerId)
                  .OnDelete(DeleteBehavior.Cascade);
 
@@ -203,6 +183,23 @@ namespace PeerReview.Infrastructure.Persistence
                  .WithMany()
                  .HasForeignKey(x => x.ReviewerUserId)
                  .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            // ===== AnswerFiles =====
+            modelBuilder.Entity<AnswerFile>(b =>
+            {
+                b.HasOne(af => af.Answer)
+                 .WithMany(a => a.Files)
+                 .HasForeignKey(af => af.AnswerId)
+                 .OnDelete(DeleteBehavior.Cascade);
+
+                b.HasOne(af => af.File)
+                 .WithMany()
+                 .HasForeignKey(af => af.FileId)
+                 .OnDelete(DeleteBehavior.Cascade);
+
+                b.HasIndex(af => af.AnswerId);
+                b.HasIndex(af => af.FileId);
             });
 
             // ===== Global soft-delete filters =====
@@ -213,6 +210,7 @@ namespace PeerReview.Infrastructure.Persistence
             modelBuilder.Entity<Lookup>().HasQueryFilter(e => !e.IsDeleted);
             modelBuilder.Entity<SubLookup>().HasQueryFilter(e => !e.IsDeleted);
             modelBuilder.Entity<FileEntry>().HasQueryFilter(e => !e.IsDeleted);
+            modelBuilder.Entity<AnswerFile>().HasQueryFilter(e => !e.IsDeleted);
 
             base.OnModelCreating(modelBuilder);
         }

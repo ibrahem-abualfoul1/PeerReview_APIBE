@@ -15,9 +15,11 @@ namespace PeerReview.Domain.Entities
 
         public string? Value { get; set; }
 
-        public int? FileId { get; set; }                // Optional FK -> FileEntry
-        public FileEntry? File { get; set; }            // Optional nav
+        
 
         public DateTime? SubmittedAt { get; set; }
+
+        public ICollection<AnswerFile> Files { get; set; } = new List<AnswerFile>();
+
     }
 }

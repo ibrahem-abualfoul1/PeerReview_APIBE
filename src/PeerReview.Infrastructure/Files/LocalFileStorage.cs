@@ -22,4 +22,14 @@ public class LocalFileStorage : IFileStorage
         var rel = name;
         return (rel, new FileInfo(full).Length, contentType ?? "application/octet-stream");
     }
+
+    public Task DeleteAsync(string fileName)
+    {
+        var full = Path.Combine(_root, fileName);
+        if (File.Exists(full))
+        {
+            File.Delete(full);
+        }
+        return Task.CompletedTask;
+    }
 }

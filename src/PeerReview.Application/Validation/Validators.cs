@@ -43,9 +43,7 @@ namespace PeerReview.Application.Validation
     {
         public QuestionItemCreateDtoValidator()
         {
-            RuleFor(x => x.TextAr)
-                .NotEmpty()
-                .MaximumLength(256);
+            
             RuleFor(x => x.TextEn)
                 .NotEmpty()
                 .MaximumLength(256);
@@ -53,18 +51,7 @@ namespace PeerReview.Application.Validation
             RuleFor(x => x.Type)
                 .IsInEnum();
 
-            When(x => x.Type == QuestionType.SingleChoice || x.Type == QuestionType.MultiChoice, () =>
-            {
-                RuleFor(x => x.OptionsCsvAr)
-                    .NotEmpty().WithMessage("OptionsCsv is required for choice types.")
-                    .MaximumLength(512);
-            });
-
-            When(x => x.Type != QuestionType.SingleChoice && x.Type != QuestionType.MultiChoice, () =>
-            {
-                RuleFor(x => x.OptionsCsvAr)
-                    .Empty().WithMessage("OptionsCsv should be empty for non-choice types.");
-            });
+          
 
             When(x => x.Type == QuestionType.SingleChoice || x.Type == QuestionType.MultiChoice, () =>
             {
@@ -99,7 +86,6 @@ namespace PeerReview.Application.Validation
     {
         public QuestionCreateDtoValidator()
         {
-            RuleFor(x => x.TitleAr).NotEmpty().MaximumLength(256);
             RuleFor(x => x.TitleEn).NotEmpty().MaximumLength(256);
 
             RuleFor(x => x.CategoryId)
@@ -124,7 +110,6 @@ namespace PeerReview.Application.Validation
     {
         public QuestionUpdateDtoValidator()
         {
-            RuleFor(x => x.TitleAr).NotEmpty().MaximumLength(256);
             RuleFor(x => x.TitleEn).NotEmpty().MaximumLength(256);
 
             RuleFor(x => x.CategoryId)

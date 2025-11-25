@@ -21,10 +21,16 @@ public class AnswersController : ControllerBase
     [HttpGet("mine")]
     public async Task<ActionResult<IEnumerable<Answer>>> Mine()
     {
-        return await _db.Answers.Include(x => x.Question).Include(x => x.QuestionItem).Include(x => x.User).ToListAsync();
+        var list = await _db.Answers
+            .Include(x => x.Question)
+            .Include(x => x.QuestionItem)
+            .Include(x => x.User)
+            .Include(x => x.File)
+            .ToListAsync();
+
+        return list;
     }
 
-    [HttpPost]
     [HttpPost]
     public async Task<ActionResult> Create(List<AnswerCreateDto> dtoList)
     {
@@ -91,18 +97,66 @@ public class AnswersController : ControllerBase
     [RequestSizeLimit(20_000_000)]
     public async Task<ActionResult> Upload([FromForm] int questionId, [FromForm] int? questionItemId, IFormFile file)
     {
-        if (file == null || file.Length == 0) return BadRequest("Empty file");
-        var (rel, length, contentType) = await _files.SaveAsync(file.FileName, file.OpenReadStream(), file.ContentType);
-        var fe = new FileEntry { FileName = file.FileName, ContentType = contentType, Length = length, Path = System.IO.Path.Combine("uploads", rel).Replace("\\", "/"), UploadedByUserId = CurrentUserId };
-        _db.FileEntries.Add(fe);
-        await _db.SaveChangesAsync();
+        try
+        {
+            if (file == null || file.Length == 0)
+                return BadRequest("Empty file");
 
-        var a = await _db.Answers.FirstOrDefaultAsync(x => x.UserId == CurrentUserId && x.QuestionId == questionId && x.QuestionItemId == questionItemId);
-        if (a == null) { a = new Answer { UserId = CurrentUserId, QuestionId = questionId, QuestionItemId = questionItemId, FileId = fe.Id, SubmittedAt = DateTime.UtcNow }; _db.Answers.Add(a); }
-        else { a.FileId = fe.Id; a.SubmittedAt = DateTime.UtcNow; }
-        await _db.SaveChangesAsync();
-        return Ok(new { a.Id, FileId = fe.Id, FileUrl = "/uploads/" + rel });
+            var (rel, length, contentType) = await _files.SaveAsync(
+                file.FileName,
+                file.OpenReadStream(),
+                file.ContentType
+            );
+
+            var fe = new FileEntry
+            {
+                FileName = file.FileName,
+                ContentType = contentType,
+                Length = length,
+                Path = Path.Combine("uploads", rel).Replace("\\", "/"),
+                UploadedByUserId = CurrentUserId
+            };
+
+            _db.FileEntries.Add(fe);
+            await _db.SaveChangesAsync();
+
+            var a = await _db.Answers.FirstOrDefaultAsync(x =>
+                x.UserId == CurrentUserId &&
+                x.QuestionId == questionId &&
+                x.QuestionItemId == questionItemId
+            );
+
+            if (a == null)
+            {
+                a = new Answer
+                {
+                    UserId = CurrentUserId,
+                    QuestionId = questionId,
+                    QuestionItemId = questionItemId,
+                    FileId = fe.Id,
+                    SubmittedAt = DateTime.UtcNow
+                };
+                _db.Answers.Add(a);
+            }
+            else
+            {
+                a.FileId = fe.Id;
+                a.SubmittedAt = DateTime.UtcNow;
+            }
+
+            await _db.SaveChangesAsync();
+
+            return Ok(new { a.Id, FileId = fe.Id, FileUrl = "/uploads/" + rel });
+        }
+        catch (Exception ex)
+        {
+            // لو عندك ILogger:
+            // _logger.LogError(ex, "Error in upload");
+
+            return StatusCode(500, new { error = ex.Message, stack = ex.StackTrace });
+        }
     }
+
 
 
     [HttpGet("getByUserId")]

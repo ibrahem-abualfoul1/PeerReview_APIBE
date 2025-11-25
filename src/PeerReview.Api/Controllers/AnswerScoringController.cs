@@ -43,6 +43,8 @@ public class AnswerScoringController : ControllerBase
         public bool HasUnscored { get; set; }  // لديه إجابات غير مُقيّمة لهذا المقيِّم
 
         public DateTime? LastScoredAt { get; set; }
+        public decimal TotalScore { get; set; }      
+
     }
 
     public class UsersScoredStatusVm
@@ -56,7 +58,7 @@ public class AnswerScoringController : ControllerBase
     [HttpGet("by-user-unscored")]
     public async Task<IActionResult> GetUnscoredAnswersByUser([FromQuery] int userId, CancellationToken ct)
     {
-        var data = await _db.Answers
+        var data = await _db.Answers.Include(x=>x.File)
             .AsNoTracking()
             .Where(a => a.UserId == userId)
             .Where(a => !_db.AnswerScores.Any(s => s.AnswerId == a.Id))
@@ -65,12 +67,14 @@ public class AnswerScoringController : ControllerBase
                 AnswerId = a.Id,
                 a.QuestionId,
                 a.QuestionItemId,
-                ItemTextAr = a.QuestionItem != null ? a.QuestionItem.TextAr : null,
                 ItemTextEn = a.QuestionItem != null ? a.QuestionItem.TextEn : null,
                 a.Value,
                 a.SubmittedAt,
                 a.QuestionItem,
-                a.Question
+                a.Question,
+                a.File,
+                a.FileId
+
             })
             .OrderBy(x => x.QuestionId)
             .ThenBy(x => x.QuestionItemId)
@@ -242,7 +246,7 @@ public class AnswerScoringController : ControllerBase
     {
         var q =
             from s in _db.AnswerScores.AsNoTracking()
-            join a in _db.Answers.AsNoTracking() on s.AnswerId equals a.Id
+            join a in _db.Answers.Include(x=>x.File).AsNoTracking() on s.AnswerId equals a.Id
             join qi in _db.QuestionItems.AsNoTracking() on a.QuestionItemId equals qi.Id into _qi
             from qi in _qi.DefaultIfEmpty()
             join r in _db.Users.AsNoTracking() on s.ReviewerUserId equals r.Id
@@ -253,7 +257,6 @@ public class AnswerScoringController : ControllerBase
                 AnswerId = a.Id,
                 a.QuestionId,
                 a.QuestionItemId,
-                ItemTextAr = qi != null ? qi.TextAr : null,
                 ItemTextEn = qi != null ? qi.TextEn : null,
                 a.Value,
                 s.Score,
@@ -262,7 +265,9 @@ public class AnswerScoringController : ControllerBase
                 ReviewerId = s.ReviewerUserId,
                 ReviewerName = r.FullName ?? r.UserName,
                a.QuestionItem,
-                a.Question
+                a.Question,
+                a.File,
+                a.FileId
 
 
             };
@@ -323,7 +328,8 @@ public class AnswerScoringController : ControllerBase
             {
                 a.UserId,
                 HasScore = s != null,
-                ScoredAt = s != null ? s.ScoredAt : (DateTime?)null
+                ScoredAt = s != null ? s.ScoredAt : (DateTime?)null,
+                Score = s != null ? s.Score : 0,
             };
 
         // نجمع على مستوى المستخدم
@@ -335,7 +341,9 @@ public class AnswerScoringController : ControllerBase
                 TotalAnswers = g.Count(),
                 ScoredCount = g.Count(x => x.HasScore),
                 UnscoredCount = g.Count(x => !x.HasScore),
-                LastScoredAt = g.Max(x => x.ScoredAt)
+                LastScoredAt = g.Max(x => x.ScoredAt),
+                TotalScore = g.Sum(x => x.Score)      
+
             })
             .ToListAsync(ct);
 
@@ -357,7 +365,8 @@ public class AnswerScoringController : ControllerBase
             UnscoredCount = x.UnscoredCount,
             HasScored = x.ScoredCount > 0,
             HasUnscored = x.UnscoredCount > 0,
-            LastScoredAt = x.LastScoredAt
+            LastScoredAt = x.LastScoredAt,
+            TotalScore = x.TotalScore
         }).ToList();
 
         // تقسيم لقائمتين
@@ -438,7 +447,6 @@ public class AnswerScoringController : ControllerBase
                 s.AnswerId,
                 a.QuestionId,
                 a.QuestionItemId,
-                ItemTextAr = qi != null ? qi.TextAr : null,
                 ItemTextEn = qi != null ? qi.TextEn : null,
                 a.Value,
                 s.Score,

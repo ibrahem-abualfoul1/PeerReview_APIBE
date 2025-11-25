@@ -21,14 +21,14 @@ public class QuestionsController : ControllerBase
         var items = await _db.Questions
             .AsNoTracking()
             .Select(q => new QuestionDto(
-                q.Id, q.TitleAr, q.DescriptionAr, q.TitleEn, q.DescriptionEn,
+                q.Id,  q.TitleEn, q.DescriptionEn,
                 q.CategoryId, q.SubCategoryId,
                 q.Category != null ? q.Category.NameEn : null,
                 q.SubCategory != null ? q.SubCategory.NameEn : null,
                 q.Items
                     .OrderBy(i => i.Id)
                     .Select(i => new QuestionItemDto(
-                        i.Id, i.TextAr, i.TextEn, i.Type, i.IsRequired, i.OptionsCsvAr, i.OptionsCsvEn
+                        i.Id,  i.TextEn, i.Type, i.IsRequired,  i.OptionsCsvEn
                     ))
                     .ToList()
             ))
@@ -45,14 +45,14 @@ public class QuestionsController : ControllerBase
             .AsNoTracking()
             .Where(q => q.Id == id)
             .Select(q => new QuestionDto(
-                q.Id, q.TitleAr, q.DescriptionAr, q.TitleEn, q.DescriptionEn,
+                q.Id,  q.TitleEn, q.DescriptionEn,
                 q.CategoryId, q.SubCategoryId,
                 q.Category != null ? q.Category.NameEn : null,
                 q.SubCategory != null ? q.SubCategory.NameEn : null,
                 q.Items
                     .OrderBy(i => i.Id)
                     .Select(i => new QuestionItemDto(
-                        i.Id, i.TextAr, i.TextEn, i.Type, i.IsRequired, i.OptionsCsvAr, i.OptionsCsvEn
+                        i.Id,  i.TextEn, i.Type, i.IsRequired,  i.OptionsCsvEn
                     ))
                     .ToList()
             ))
@@ -73,8 +73,6 @@ public class QuestionsController : ControllerBase
 
         var q = new Question
         {
-            TitleAr = dto.TitleAr,
-            DescriptionAr = dto.DescriptionAr ?? "",
             TitleEn = dto.TitleEn,
             DescriptionEn = dto.DescriptionEn ?? "",
             CategoryId = dto.CategoryId,
@@ -108,8 +106,6 @@ public class QuestionsController : ControllerBase
         var categoryExists = await _db.Lookups.AnyAsync(l => l.Id == dto.CategoryId, ct);
         if (!categoryExists) return BadRequest("CategoryId غير صالح.");
 
-        q.TitleAr = dto.TitleAr;
-        q.DescriptionAr = dto.DescriptionAr ?? "";
         q.TitleEn = dto.TitleEn;
         q.DescriptionEn = dto.DescriptionEn ?? "";
         q.CategoryId = dto.CategoryId;

@@ -41,14 +41,12 @@ public class LookupsController : ControllerBase
         return Ok(new
         {
             l.Id,
-            l.NameAr,
             l.NameEn,
 
-            l.TypeAr,
             l.TypeEn,
 
             l.Code,
-            SubLookups = l.SubLookups.Select(s => new { s.Id, s.NameEn, s.NameAr })
+            SubLookups = l.SubLookups.Select(s => new { s.Id, s.NameEn })
         });
     }
 
@@ -60,17 +58,17 @@ public class LookupsController : ControllerBase
 
         var l = new Lookup
         {
-            NameAr = dto.NameAr,
+            
             TypeEn = dto.TypeEn,
             NameEn = dto.NameEn,
-            TypeAr = dto.TypeAr,
+          
             Code = dto.Code
         };
 
         _db.Lookups.Add(l);
         await _db.SaveChangesAsync(ct);
 
-        return CreatedAtAction(nameof(GetById), new { code = l.Code }, new { l.Id, l.NameAr, l.TypeAr, l.NameEn, l.TypeEn, l.Code });
+        return CreatedAtAction(nameof(GetById), new { code = l.Code }, new { l.Id,  l.NameEn, l.TypeEn, l.Code });
     }
 
     // PUT: api/Lookups/{code}
@@ -82,11 +80,7 @@ public class LookupsController : ControllerBase
 
 
 
-        l.NameAr = dto.NameAr;
-        l.TypeAr = dto.TypeAr;
-
         l.NameEn = dto.NameEn;
-        l.TypeEn = dto.TypeAr;
 
         l.Code = dto.Code; // اسمح بتحديث الكود (أو احذفه لو بدك تثبّت الكود)
 
@@ -126,11 +120,11 @@ public class LookupsController : ControllerBase
             return NotFound("Parent lookup not found.");
 
         var s = new SubLookup 
-        { LookupId = lookup.Id, NameAr = dto.NameAr , NameEn = dto.NameEn };
+        { LookupId = lookup.Id,  NameEn = dto.NameEn };
         _db.SubLookups.Add(s);
         await _db.SaveChangesAsync(ct);
 
-        return CreatedAtAction(nameof(GetSubById), new { id = s.Id }, new { s.Id, s.NameEn, s.NameAr, s.LookupId });
+        return CreatedAtAction(nameof(GetSubById), new { id = s.Id }, new { s.Id, s.NameEn,  s.LookupId });
     }
 
     [HttpPut("sub/{id:int}")]
@@ -141,7 +135,6 @@ public class LookupsController : ControllerBase
 
         
 
-        s.NameAr = dto.NameAr;
         s.NameEn = dto.NameEn;
 
         await _db.SaveChangesAsync(ct);
@@ -180,6 +173,6 @@ public class LookupsController : ControllerBase
             .FirstOrDefaultAsync(x => x.Id == id, ct);
 
         if (l is null) return NotFound();
-        return Ok(new { l.Id, l.NameAr, l.NameEn });
+        return Ok(new { l.Id,  l.NameEn });
     }
 }

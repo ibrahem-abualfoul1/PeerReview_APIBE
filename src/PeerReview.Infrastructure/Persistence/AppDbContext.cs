@@ -36,14 +36,12 @@ namespace PeerReview.Infrastructure.Persistence
             // ===== QuestionItems =====
             modelBuilder.Entity<QuestionItem>(b =>
             {
-                b.Property(x => x.TextAr).IsRequired().HasMaxLength(256)
-                 .HasConversion(v => v == null ? null : v.Trim(), v => v);
+                
 
                 b.Property(x => x.TextEn).IsRequired().HasMaxLength(256)
                  .HasConversion(v => v == null ? null : v.Trim(), v => v);
 
-                b.Property(x => x.OptionsCsvAr).HasMaxLength(1024)
-                 .HasConversion(v => v == null ? null : v.Trim(), v => v);
+                
 
                 b.Property(x => x.OptionsCsvEn).HasMaxLength(1024)
                  .HasConversion(v => v == null ? null : v.Trim(), v => v);
@@ -92,20 +90,14 @@ namespace PeerReview.Infrastructure.Persistence
             // ===== Lookups =====
             modelBuilder.Entity<Lookup>(b =>
             {
-                b.Property(l => l.NameAr)
-                 .IsRequired()
-                 .HasMaxLength(128)
-                 .HasConversion(v => v == null ? null : v.Trim(), v => v);
+                
 
                 b.Property(l => l.NameEn)
                  .IsRequired()
                  .HasMaxLength(128)
                  .HasConversion(v => v == null ? null : v.Trim(), v => v);
 
-                b.Property(l => l.TypeAr)
-                 .IsRequired()
-                 .HasMaxLength(64)
-                 .HasConversion(v => v == null ? null : v.Trim(), v => v);
+                
 
                 b.Property(l => l.TypeEn)
                  .IsRequired()
@@ -124,9 +116,7 @@ namespace PeerReview.Infrastructure.Persistence
                  .IsUnique()
                  .HasFilter("[IsDeleted] = 0");
 
-                b.HasIndex(l => new { l.TypeAr, l.NameAr })
-                 .IsUnique()
-                 .HasFilter("[IsDeleted] = 0");
+            
 
                 b.HasIndex(l => l.Code)
                  .IsUnique()
@@ -136,10 +126,7 @@ namespace PeerReview.Infrastructure.Persistence
             // ===== SubLookups =====
             modelBuilder.Entity<SubLookup>(b =>
             {
-                b.Property(s => s.NameAr)
-                 .IsRequired()
-                 .HasMaxLength(128)
-                 .HasConversion(v => v == null ? null : v.Trim(), v => v);
+               
 
                 b.Property(s => s.NameEn)
                  .IsRequired()
@@ -151,9 +138,7 @@ namespace PeerReview.Infrastructure.Persistence
                  .HasForeignKey(s => s.LookupId)
                  .OnDelete(DeleteBehavior.Cascade);
 
-                b.HasIndex(s => new { s.LookupId, s.NameAr })
-                 .IsUnique()
-                 .HasFilter("[IsDeleted] = 0");
+               
 
                 b.HasIndex(s => new { s.LookupId, s.NameEn })
                  .IsUnique()

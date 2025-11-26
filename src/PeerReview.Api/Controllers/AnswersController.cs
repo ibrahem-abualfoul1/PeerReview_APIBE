@@ -102,43 +102,13 @@ public class AnswersController : ControllerBase
             if (file == null || file.Length == 0)
                 return BadRequest("Empty file");
 
-            // 1) نجيب الـ Answer الحالي (لو موجود) مع الملفات المرتبطة
-            var answer = await _db.Answers
-                .Include(a => a.Files)
-                    .ThenInclude(af => af.File)
-                .FirstOrDefaultAsync(a =>
-                    a.UserId == CurrentUserId &&
-                    a.QuestionId == questionId &&
-                    a.QuestionItemId == questionItemId
-                );
-
-            // لو ما في Answer نعمل واحد جديد
-            if (answer == null)
-            {
-                answer = new Answer
-                {
-                    UserId = CurrentUserId,
-                    QuestionId = questionId,
-                    QuestionItemId = questionItemId,
-                    SubmittedAt = DateTime.UtcNow
-                };
-
-                _db.Answers.Add(answer);
-                await _db.SaveChangesAsync(); // عشان نضمن أن الـ Id اتولد
-            }
-
-            // ✅ **مهم**:
-            // ما عاد نحذف أي ملفات قديمة
-            // كل Upload راح يضيف ملف جديد فوق الموجودين
-
-            // 2) حفظ الملف الجديد في التخزين الفيزيائي
+            // 1) خزّن الملف في الـ Storage
             var (rel, length, contentType) = await _files.SaveAsync(
                 file.FileName,
                 file.OpenReadStream(),
                 file.ContentType
             );
 
-            // 3) إنشاء FileEntry جديد
             var fe = new FileEntry
             {
                 FileName = file.FileName,
@@ -151,31 +121,96 @@ public class AnswersController : ControllerBase
             _db.FileEntries.Add(fe);
             await _db.SaveChangesAsync();
 
-            // 4) ربطه بالـ Answer عن طريق AnswerFile (إضافة جديدة بدون حذف القديم)
-            var answerFile = new AnswerFile
+            // 2) جيب/أنشئ Answer
+            var a = await _db.Answers
+                .Include(x => x.Files)
+                .FirstOrDefaultAsync(x =>
+                    x.UserId == CurrentUserId &&
+                    x.QuestionId == questionId &&
+                    x.QuestionItemId == questionItemId
+                );
+
+            if (a == null)
             {
-                AnswerId = answer.Id,
+                a = new Answer
+                {
+                    UserId = CurrentUserId,
+                    QuestionId = questionId,
+                    QuestionItemId = questionItemId,
+                    SubmittedAt = DateTime.UtcNow
+                };
+                _db.Answers.Add(a);
+                await _db.SaveChangesAsync();
+            }
+            else
+            {
+                a.SubmittedAt = DateTime.UtcNow;
+            }
+
+            // 3) اربط الملف بالـ Answer عن طريق AnswerFile (بدون حذف القديم)
+            var af = new AnswerFile
+            {
+                AnswerId = a.Id,
                 FileId = fe.Id
             };
-
-            _db.AnswerFiles.Add(answerFile);
-
-            // تحديث وقت الإرسال
-            answer.SubmittedAt = DateTime.UtcNow;
-
+            _db.AnswerFiles.Add(af);
             await _db.SaveChangesAsync();
 
+            // 4) ارجع بيانات تساعد الواجهة
             return Ok(new
             {
-                AnswerId = answer.Id,
+                AnswerId = a.Id,
                 FileId = fe.Id,
-                FileUrl = "/uploads/" + rel
+                AnswerFileId = af.Id,
+                FileName = fe.FileName,
+                FileUrl = "/" + fe.Path.TrimStart('/')  // أو على حسب الـ API Base
             });
         }
         catch (Exception ex)
         {
             return StatusCode(500, new { error = ex.Message, stack = ex.StackTrace });
         }
+    }
+
+    [HttpDelete("files/{answerFileId:int}")]
+    public async Task<ActionResult> DeleteFile(int answerFileId)
+    {
+        var af = await _db.AnswerFiles
+            .Include(x => x.Answer)
+            .Include(x => x.File)
+            .FirstOrDefaultAsync(x => x.Id == answerFileId);
+
+        if (af == null)
+            return NotFound();
+
+        // تأكد إنه صاحب الإجابة
+        if (af.Answer.UserId != CurrentUserId)
+            return Forbid();
+
+        // Soft delete لـ AnswerFile
+        af.IsDeleted = true;
+        af.DeletedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+
+        // لو ما ظل ولا AnswerFile فعّال يربط هذا الملف → احذفه فعليًا
+        var stillUsed = await _db.AnswerFiles
+            .AnyAsync(x => x.FileId == af.FileId && !x.IsDeleted);
+
+        if (!stillUsed)
+        {
+            var file = af.File;
+            file.IsDeleted = true;
+            file.DeletedAt = DateTime.UtcNow;
+            await _db.SaveChangesAsync();
+
+            // حذف من الـ Storage
+            if (!string.IsNullOrWhiteSpace(file.Path))
+            {
+                await _files.DeleteAsync(file.Path);
+            }
+        }
+
+        return NoContent();
     }
 
 

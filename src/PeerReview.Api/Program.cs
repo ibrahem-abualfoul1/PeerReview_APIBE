@@ -9,6 +9,8 @@ using PeerReview.Infrastructure.Identity;
 using PeerReview.Infrastructure.Persistence;
 using PeerReview.Infrastructure.Seed;
 using System.Text;
+using Microsoft.Extensions.FileProviders;
+
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -41,9 +43,21 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 builder.Services.AddSingleton<IJwtTokenService>(_ =>
     new JwtTokenService(jwt["Issuer"]!, jwt["Audience"]!, jwt["Key"]!));
 
-builder.Services.AddSingleton<IFileStorage>(_ =>
-    new LocalFileStorage(Path.Combine(Directory.GetCurrentDirectory(),
-        builder.Configuration["UploadRoot"]!)));
+builder.Services.AddSingleton<IFileStorage>(sp =>
+{
+    var env = sp.GetRequiredService<IWebHostEnvironment>();
+    var uploadRoot = builder.Configuration["UploadRoot"] ?? "uploads";
+
+    // نخلي الأساس هو webRoot لو موجود
+    var baseRoot = env.WebRootPath ?? env.ContentRootPath;
+
+    // d:\...\www.IHGHotelBK.somee.com\wwwroot\uploads
+    var physicalPath = Path.Combine(baseRoot, uploadRoot);
+    Directory.CreateDirectory(physicalPath);
+
+    return new LocalFileStorage(physicalPath);
+});
+
 
 // ======== MVC + Validation + ProblemDetails ========
 builder.Services.AddProblemDetails();
@@ -164,7 +178,21 @@ using (var scope = app.Services.CreateScope())
 app.UseExceptionHandler();     // ProblemDetails
 app.UseStatusCodePages();
 
-app.UseStaticFiles();
+
+
+// 🟢 StaticFiles لمجلد uploads تحت ContentRoot
+var uploadsPath = Path.Combine(
+    app.Environment.WebRootPath ?? app.Environment.ContentRootPath,
+    app.Configuration["UploadRoot"] ?? "uploads"
+);
+
+Directory.CreateDirectory(uploadsPath);
+
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new PhysicalFileProvider(uploadsPath),
+    RequestPath = "/uploads"
+});
 
 // ✅ CORS لازم يكون قبل المصادقة وقبل MapControllers
 app.UseCors("ng");

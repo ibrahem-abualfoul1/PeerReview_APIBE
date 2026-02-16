@@ -62,10 +62,11 @@ public class AssignmentsController : ControllerBase
             .Where(a =>
                 a.Question.Items.Any(qi =>
                     !_db.Answers.Any(ans =>
-                        ans.UserId == userId &&
+                       ( ans.UserId == userId &&
                         ans.QuestionId == a.QuestionId &&
-                        ans.QuestionItemId == qi.Id
-                    )
+                        ans.QuestionItemId == qi.Id) 
+                        
+                    ) && qi.IsRequired
                 )
             )
 

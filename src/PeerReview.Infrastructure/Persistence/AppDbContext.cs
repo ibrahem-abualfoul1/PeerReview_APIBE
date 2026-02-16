@@ -167,23 +167,29 @@ namespace PeerReview.Infrastructure.Persistence
             // ===== AnswerScores =====
             modelBuilder.Entity<AnswerScore>(b =>
             {
-                b.HasIndex(x => x.AnswerId);
-                b.HasIndex(x => new { x.AnswerId, x.ReviewerUserId })
+                b.HasIndex(x => new { x.QuestionId, x.RevieweeUserId, x.ReviewerUserId })
                  .IsUnique()
                  .HasFilter("[IsDeleted] = 0");
 
-                b.Property(x => x.Score).HasColumnType("decimal(10,2)");
+                b.Property(x => x.Score)
+                 .HasColumnType("decimal(10,2)");
 
-                b.HasOne(x => x.Answer)
-                 .WithMany()
-                 .HasForeignKey(x => x.AnswerId)
+                b.HasOne(x => x.Question)
+                 .WithMany(q => q.Scores)  
+                 .HasForeignKey(x => x.QuestionId)
                  .OnDelete(DeleteBehavior.Cascade);
+
+                b.HasOne(x => x.Reviewee)
+                 .WithMany()                
+                 .HasForeignKey(x => x.RevieweeUserId)
+                 .OnDelete(DeleteBehavior.Restrict);
 
                 b.HasOne(x => x.Reviewer)
                  .WithMany()
                  .HasForeignKey(x => x.ReviewerUserId)
                  .OnDelete(DeleteBehavior.Restrict);
             });
+
 
             // ===== AnswerFiles =====
             modelBuilder.Entity<AnswerFile>(b =>

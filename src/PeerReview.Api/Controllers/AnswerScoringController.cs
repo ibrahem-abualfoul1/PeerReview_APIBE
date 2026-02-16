@@ -13,18 +13,45 @@ public class AnswerScoringController : ControllerBase
 {
     private readonly AppDbContext _db;
     public AnswerScoringController(AppDbContext db) => _db = db;
+
     int CurrentUserId => int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
-    public record BatchScoreItemDto(int AnswerId, decimal Score, string? Notes);
-    public record BatchScoreUpsertDto(List<BatchScoreItemDto> Items);
-    public record BatchUserScoreUpdateDto(int UserId, List<BatchScoreItemDto> Items);
+    // ================== DTOs ==================
+
+    // لإرسال السكور لكل سؤال
+    public record QuestionScoreItemDto(int QuestionId, decimal Score, string? Notes);
+    public record QuestionScoreUpsertDto(int RevieweeUserId, List<QuestionScoreItemDto> Items);
+
+    // لعرض الـ Items مع الإجابات لكل سؤال
+    public class QuestionItemAnswerDto
+    {
+        public int QuestionItemId { get; set; }
+        public string ItemTextEn { get; set; } = "";
+        public string? AnswerValue { get; set; }
+
+        public List<object> Files { get; set; } = new(); // عدّل النوع لو عندك DTO للملف
+    }
+
+    public class QuestionReviewDto
+    {
+        public int QuestionId { get; set; }
+        public string QuestionTitleEn { get; set; } = "";
+        public string QuestionDescriptionEn { get; set; } = "";
+
+        // عناصر السؤال + إجاباتها
+        public List<QuestionItemAnswerDto> Items { get; set; } = new();
+
+        // للعرض فقط (إن وجد سكور قديم)
+        public decimal? ExistingScore { get; set; }
+        public string? ExistingNotes { get; set; }
+    }
 
     public class WithScoredAnswersDto
     {
         public int UserId { get; set; }
         public string? UserName { get; set; }
         public string? FullName { get; set; }
-        public int ScoredCount { get; set; }
+        public int ScoredCount { get; set; }       // عدد الأسئلة المقيَّمة
         public double AvgScore { get; set; }
         public DateTime? LastScoredAt { get; set; }
     }
@@ -35,53 +62,201 @@ public class AnswerScoringController : ControllerBase
         public string? UserName { get; set; }
         public string? FullName { get; set; }
 
-        public int TotalAnswers { get; set; }
-        public int ScoredCount { get; set; }
-        public int UnscoredCount { get; set; }
+        public int TotalQuestions { get; set; }    // عدد الأسئلة التي أجاب عنها المستخدم
+        public int ScoredCount { get; set; }       // عدد الأسئلة التي تقيّمت
+        public int UnscoredCount { get; set; }     // عدد الأسئلة غير المقيّمة
 
-        public bool HasScored { get; set; }    // على الأقل إجابة واحدة مُقيّمة لهذا المقيِّم
-        public bool HasUnscored { get; set; }  // لديه إجابات غير مُقيّمة لهذا المقيِّم
+        public bool HasScored { get; set; }
+        public bool HasUnscored { get; set; }
 
         public DateTime? LastScoredAt { get; set; }
-        public decimal TotalScore { get; set; }      
-
+        public decimal TotalScore { get; set; }
     }
 
     public class UsersScoredStatusVm
     {
-        public int ReviewerId { get; set; }
         public List<UserScoreStatusDto> Scored { get; set; } = new();
         public List<UserScoreStatusDto> Unscored { get; set; } = new();
     }
-
-
-    [HttpGet("by-user-unscored")]
-    public async Task<IActionResult> GetUnscoredAnswersByUser([FromQuery] int userId, CancellationToken ct)
+    public class ScoreDto
     {
-        var data = await _db.Answers.Include(x=>x.Files).ThenInclude(x=>x.File)
-            .AsNoTracking()
-            .Where(a => a.UserId == userId)
-            .Where(a => !_db.AnswerScores.Any(s => s.AnswerId == a.Id))
-            .Select(a => new
-            {
-                AnswerId = a.Id,
-                a.QuestionId,
-                a.QuestionItemId,
-                ItemTextEn = a.QuestionItem != null ? a.QuestionItem.TextEn : null,
-                a.Value,
-                a.SubmittedAt,
-                a.QuestionItem,
-                a.Question,
-                a.Files
-
-            })
-            .OrderBy(x => x.QuestionId)
-            .ThenBy(x => x.QuestionItemId)
-            .ToListAsync(ct);
-
-        return Ok(data);
+        public int QuestionId { get; set; }
+        public decimal? Score { get; set; }
+        public string? Notes { get; set; }
     }
 
+    public class ScoreUpdateDto
+    {
+        public int UserId { get; set; }
+        public List<ScoreDto> Items { get; set; } = new();
+    }
+
+
+    // ================== Helpers ==================
+
+    private int GetCurrentReviewerId()
+    {
+        var idStr = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                   ?? User.FindFirstValue("sub")
+                   ?? User.FindFirstValue("uid");
+
+        return int.TryParse(idStr, out var id) ? id : 1;
+    }
+
+    // ================== 1) جلب أسئلة مستخدم لم تُقيَّم بعد ==================
+    // GET: api/AnswerScoring/by-user-unscored?userId=5
+    // يرجع List<QuestionReviewDto> : كل سؤال + عناصره + إجابات المستخدم
+    [HttpGet("by-user-unscored")]
+    public async Task<IActionResult> GetUnscoredQuestionsByUser(
+        [FromQuery] int userId,
+        CancellationToken ct)
+    {
+        // كل الإجابات لهذا المستخدم
+        var answers = await _db.Answers
+            .Include(a => a.Question)
+            .Include(a => a.QuestionItem)
+            .Include(a => a.Files).ThenInclude(f => f.File)
+            .AsNoTracking()
+            .Where(a => a.UserId == userId)
+            .ToListAsync(ct);
+
+        if (!answers.Any())
+            return Ok(new List<QuestionReviewDto>());
+
+        var questionIds = answers.Select(a => a.QuestionId).Distinct().ToList();
+
+        // الأسئلة التي تم تقييمها لهذا المستخدم مسبقاً
+        var scoredQuestionIds = await _db.AnswerScores
+            .Where(s => s.RevieweeUserId == userId && questionIds.Contains(s.QuestionId))
+            .Select(s => s.QuestionId)
+            .Distinct()
+            .ToListAsync(ct);
+
+        var scoredSet = scoredQuestionIds.ToHashSet();
+
+        // فقط الأسئلة غير المقيّمة
+        var unscoredGroups = answers
+            .Where(a => !scoredSet.Contains(a.QuestionId))
+            .GroupBy(a => a.QuestionId)
+            .ToList();
+
+        var result = new List<QuestionReviewDto>();
+
+        foreach (var g in unscoredGroups)
+        {
+            var any = g.First();
+            var dto = new QuestionReviewDto
+            {
+                QuestionId = g.Key,
+                QuestionTitleEn = any.Question.TitleEn,
+                QuestionDescriptionEn = any.Question.DescriptionEn,
+                Items = g
+                    .OrderBy(a => a.QuestionItemId)
+                    .Select(a => new QuestionItemAnswerDto
+                    {
+                        QuestionItemId = a.QuestionItemId ?? 0,
+                        ItemTextEn = a.QuestionItem?.TextEn ?? "",
+                        AnswerValue = a.Value,
+                        Files = a.Files
+                            .Select(f => new
+                            {
+
+                                FileId = f.FileId,
+                                FileName = f.File.FileName,
+                                Size = f.File.Length,
+                                Url = f.File.Path
+                            } as object)
+                            .ToList()
+                    })
+                    .ToList()
+            };
+
+            result.Add(dto);
+        }
+
+        return Ok(result);
+    }
+
+    // ================== 2) إضافة / تعديل سكورات الأسئلة لمستخدم ==================
+    // POST: api/AnswerScoring/add-question-scores
+    /*
+        {
+          "revieweeUserId": 5,
+          "items": [
+            { "questionId": 3, "score": 4.5, "notes": "..." },
+            { "questionId": 7, "score": 2.0, "notes": null }
+          ]
+        }
+    */
+    [HttpPost("add-question-scores")]
+    public async Task<IActionResult> AddQuestionScores(
+        [FromBody] QuestionScoreUpsertDto payload,
+        CancellationToken ct)
+    {
+        if (payload == null || payload.Items == null || payload.Items.Count == 0)
+            return BadRequest("لا توجد عناصر للتصحيح.");
+
+        var reviewerId = GetCurrentReviewerId();
+        var revieweeId = payload.RevieweeUserId;
+
+        var questionIds = payload.Items.Select(i => i.QuestionId).Distinct().ToList();
+
+        // تأكيد وجود الأسئلة
+        var existingQuestions = await _db.Questions
+            .Where(q => questionIds.Contains(q.Id))
+            .Select(q => q.Id)
+            .ToListAsync(ct);
+
+        if (existingQuestions.Count != questionIds.Count)
+        {
+            var found = existingQuestions.ToHashSet();
+            var missing = questionIds.Where(id => !found.Contains(id));
+            return BadRequest("أسئلة غير موجودة: " + string.Join(", ", missing));
+        }
+
+        // جلب السكورات السابقة لنفس (المستخدم المُقيَّم + المقيِّم + الأسئلة)
+        var existingScores = await _db.AnswerScores
+            .Where(s =>
+                s.RevieweeUserId == revieweeId &&
+                s.ReviewerUserId == reviewerId &&
+                questionIds.Contains(s.QuestionId))
+            .ToListAsync(ct);
+
+        var byQuestionId = existingScores.ToDictionary(s => s.QuestionId);
+        var now = DateTime.UtcNow;
+
+        foreach (var item in payload.Items)
+        {
+            if (byQuestionId.TryGetValue(item.QuestionId, out var s))
+            {
+                // UPDATE
+                s.Score = item.Score;
+                s.Notes = item.Notes;
+                s.ScoredAt = now;
+            }
+            else
+            {
+                // INSERT
+                _db.AnswerScores.Add(new Domain.Entities.AnswerScore
+                {
+                    QuestionId = item.QuestionId,
+                    RevieweeUserId = revieweeId,
+                    ReviewerUserId = reviewerId,
+                    Score = item.Score,
+                    Notes = item.Notes,
+                    ScoredAt = now
+                });
+            }
+        }
+
+        await _db.SaveChangesAsync(ct);
+
+        // يرجّع ملخّص إجمالي لكل المستخدمين بعد التعديل
+        return await GetAllUserTotalScores(ct);
+    }
+
+    // ================== 3) ملخص للمقيمين (كم سؤال قيّموا) ==================
+    // GET: api/AnswerScoring/reviewers-summary
     [HttpGet("reviewers-summary")]
     public async Task<IActionResult> GetReviewerSummary(CancellationToken ct)
     {
@@ -98,98 +273,35 @@ public class AnswerScoringController : ControllerBase
                 ReviewerUserId = g.Key.ReviewerUserId,
                 ReviewerFullName = g.Key.FullName,
                 ReviewerUserName = g.Key.UserName,
-                ReviewedAnswersCount = g.Count(),
+                ReviewedQuestionsCount = g.Count(),
                 LastReviewedAt = g.Max(s => s.ScoredAt)
             })
-            .OrderByDescending(x => x.ReviewedAnswersCount)
+            .OrderByDescending(x => x.ReviewedQuestionsCount)
             .ToListAsync(ct);
 
         return Ok(summary);
     }
 
-    private int GetCurrentReviewerId()
-    {
-        var idStr = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                   ?? User.FindFirstValue("sub")
-                   ?? User.FindFirstValue("uid");
-        return int.TryParse(idStr, out var id) ? id : 1; // fallback
-    }
-
-    [HttpPost("add-score")]
-    public async Task<IActionResult> AddAnswerScore([FromBody] BatchScoreUpsertDto payload, CancellationToken ct)
-    {
-        if (payload?.Items == null || payload.Items.Count == 0)
-            return BadRequest("لا توجد عناصر للتصحيح.");
-
-        var reviewerId = GetCurrentReviewerId();
-
-        var answerIds = payload.Items.Select(i => i.AnswerId).Distinct().ToList();
-        var existingAnswers = await _db.Answers
-            .Where(a => answerIds.Contains(a.Id))
-            .Select(a => a.Id)
-            .ToListAsync(ct);
-        if (existingAnswers.Count != answerIds.Count)
-        {
-            var found = existingAnswers.ToHashSet();
-            var missing = answerIds.Where(id => !found.Contains(id));
-            return BadRequest($"إجابات غير موجودة: {string.Join(", ", missing)}");
-        }
-
-        var existingScores = await _db.AnswerScores
-            .Where(s => answerIds.Contains(s.AnswerId))
-            .ToListAsync(ct);
-        var byAnswerId = existingScores.ToDictionary(s => s.AnswerId);
-
-        foreach (var item in payload.Items)
-        {
-            
-
-            if (byAnswerId.TryGetValue(item.AnswerId, out var s))
-            {
-                // UPDATE
-                s.Score = item.Score;
-                s.Notes = item.Notes;
-                s.ScoredAt = DateTime.UtcNow;
-            }
-            else
-            {
-                // INSERT
-                _db.AnswerScores.Add(new Domain.Entities.AnswerScore
-                {
-                    AnswerId = item.AnswerId,
-                    ReviewerUserId = reviewerId,
-                    Score = item.Score,
-                    Notes = item.Notes,
-                    ScoredAt = DateTime.UtcNow
-                });
-            }
-        }
-
-        await _db.SaveChangesAsync(ct);
-
-        return await GetAllUserTotalScores(ct);
-    }
-
-
+    // ================== 4) إجمالي سكورات المستخدمين ==================
+    // GET: api/AnswerScoring/all-scores
     [HttpGet("all-scores")]
     public async Task<IActionResult> GetAllUserTotalScores(CancellationToken ct)
     {
         var result = await _db.AnswerScores
-            .Include(s => s.Answer)
-            .ThenInclude(a => a.User)
+            .Include(s => s.Reviewee)
             .GroupBy(s => new
             {
-                s.Answer.UserId,
-                s.Answer.User.FullName,
-                s.Answer.User.UserName
+                s.RevieweeUserId,
+                s.Reviewee.FullName,
+                s.Reviewee.UserName
             })
             .Select(g => new
             {
-                UserId = g.Key.UserId,
+                UserId = g.Key.RevieweeUserId,
                 FullName = g.Key.FullName,
                 UserName = g.Key.UserName,
                 TotalScore = g.Sum(x => x.Score),
-                AnswersCount = g.Count()
+                QuestionsCount = g.Count()
             })
             .OrderByDescending(x => x.TotalScore)
             .ToListAsync(ct);
@@ -197,22 +309,36 @@ public class AnswerScoringController : ControllerBase
         return Ok(result);
     }
 
-    [HttpGet("users-with-unscored-answers")]
-    public async Task<IActionResult> GetUsersWithUnscoredAnswers(
-    CancellationToken ct = default)
+    // ================== 5) مستخدمون لديهم أسئلة غير مقيّمة ==================
+    // GET: api/AnswerScoring/users-with-unscored-questions
+    [HttpGet("users-with-unscored-questions")]
+    public async Task<IActionResult> GetUsersWithUnscoredQuestions(
+        CancellationToken ct = default)
     {
+        // كل (UserId, QuestionId) التي لا يوجد لها AnswerScore
+        var unscoredQuestions = await (
+            from a in _db.Answers.AsNoTracking()
+            where !(
+                from s in _db.AnswerScores.AsNoTracking()
+                where s.RevieweeUserId == a.UserId && s.QuestionId == a.QuestionId
+                select 1
+            ).Any()
+            group a by new { a.UserId, a.QuestionId } into g
+            select new
+            {
+                g.Key.UserId,
+                g.Key.QuestionId
+            })
+            .ToListAsync(ct);
 
-        var unscoredPerUser = await _db.Answers
-            .AsNoTracking()
-            .Where(a => !_db.AnswerScores
-                .Any(s => s.AnswerId == a.Id))
-            .GroupBy(a => a.UserId)
+        var unscoredPerUser = unscoredQuestions
+            .GroupBy(x => x.UserId)
             .Select(g => new
             {
                 UserId = g.Key,
-                UnscoredCount = g.Count()
+                UnscoredQuestionsCount = g.Count()
             })
-            .ToListAsync(ct);
+            .ToList();
 
         var userIds = unscoredPerUser.Select(x => x.UserId).ToList();
 
@@ -221,84 +347,46 @@ public class AnswerScoringController : ControllerBase
             .Select(u => new { u.Id, u.FullName, u.UserName, u.Email, u.IsActive })
             .ToListAsync(ct);
 
-        var result = (from u in users
-                      join x in unscoredPerUser on u.Id equals x.UserId
-                      orderby x.UnscoredCount descending, u.FullName
-                      select new
-                      {
-                          u.Id,
-                          u.FullName,
-                          u.UserName,
-                          u.Email,
-                          u.IsActive,
-                          x.UnscoredCount
-                      }).ToList();
+        var result = (
+            from u in users
+            join x in unscoredPerUser on u.Id equals x.UserId
+            orderby x.UnscoredQuestionsCount descending, u.FullName
+            select new
+            {
+                u.Id,
+                u.FullName,
+                u.UserName,
+                u.Email,
+                u.IsActive,
+                x.UnscoredQuestionsCount
+            }).ToList();
 
         return Ok(result);
     }
 
-    // 2) مع باراميتر reviewerId اختياري (إن لم يُمرر = جميع المقيمين)
-    [HttpGet("by-user-scored-all")]
-    public async Task<IActionResult> GetScoredAnswersByUserAll(
-        [FromQuery] int userId,
-        CancellationToken ct)
-    {
-        var q =
-            from s in _db.AnswerScores.AsNoTracking()
-            join a in _db.Answers.Include(x=>x.Files).ThenInclude(x=>x.File).AsNoTracking() on s.AnswerId equals a.Id
-            join qi in _db.QuestionItems.AsNoTracking() on a.QuestionItemId equals qi.Id into _qi
-            from qi in _qi.DefaultIfEmpty()
-            join r in _db.Users.AsNoTracking() on s.ReviewerUserId equals r.Id
-            where a.UserId == userId
-            select new
-            {
-                AnswerScoreId = s.Id,
-                AnswerId = a.Id,
-                a.QuestionId,
-                a.QuestionItemId,
-                ItemTextEn = qi != null ? qi.TextEn : null,
-                a.Value,
-                s.Score,
-                s.Notes,
-                s.ScoredAt,
-                ReviewerId = s.ReviewerUserId,
-                ReviewerName = r.FullName ?? r.UserName,
-               a.QuestionItem,
-                a.Question,
-                a.Files
-
-
-            };
-
-
-        var data = await q
-            .OrderBy(x => x.QuestionId)
-            .ThenBy(x => x.QuestionItemId)
-            .ToListAsync(ct);
-
-        return Ok(data);
-    }
-
-
-    // GET /api/AnswerScoring/users-with-answers?reviewerId=123 (اختياري)
+    // ================== 6) مستخدمون لديهم سكورات (للتقارير) ==================
+    // GET: api/AnswerScoring/users-with-answers
     [HttpGet("users-with-answers")]
     public async Task<IActionResult> GetUsersWithAnswers(CancellationToken ct = default)
     {
-        // نربط AnswerScores -> Answers -> Users
         var query =
             from s in _db.AnswerScores
-            join a in _db.Answers on s.AnswerId equals a.Id
-            join u in _db.Users on a.UserId equals u.Id
-            select new { a.UserId, u.UserName, u.FullName, s.Score, s.ScoredAt, s.ReviewerUserId };
+            join u in _db.Users on s.RevieweeUserId equals u.Id
+            select new
+            {
+                u.Id,
+                u.UserName,
+                u.FullName,
+                s.Score,
+                s.ScoredAt,
+                s.ReviewerUserId
+            };
 
-        
-
-        // تجميع حسب المستخدم
         var result = await query
-            .GroupBy(x => new { x.UserId, x.UserName, x.FullName })
+            .GroupBy(x => new { x.Id, x.UserName, x.FullName })
             .Select(g => new WithScoredAnswersDto
             {
-                UserId = g.Key.UserId,
+                UserId = g.Key.Id,
                 UserName = g.Key.UserName,
                 FullName = g.Key.FullName,
                 ScoredCount = g.Count(),
@@ -310,55 +398,64 @@ public class AnswerScoringController : ControllerBase
 
         return Ok(result);
     }
-    // GET /api/AnswerScoring/users-scored-status?reviewerId=123  (اختياري)
-    [HttpGet("users-scored-status")]
-    public async Task<IActionResult> GetUsersScoredStatus( CancellationToken ct = default)
-    {
-        // لو بدك تربطها بالمقيِّم الحالي افتراضيًا:
 
-        // لكل Answer نعرف هل عليه Score لهذا المقيّم أم لا
-        var perAnswer =
+    // ================== 7) حالة التقييم لكل مستخدم (كم سؤال مقيَّم / غير مقيَّم) ==================
+    // GET: api/AnswerScoring/users-scored-status
+    [HttpGet("users-scored-status")]
+    public async Task<IActionResult> GetUsersScoredStatus(
+        CancellationToken ct = default)
+    {
+        // كل (UserId, QuestionId) التي تمت الإجابة عليها
+        var perQuestion =
             from a in _db.Answers.AsNoTracking()
+            group a by new { a.UserId, a.QuestionId } into g
+            select new
+            {
+                g.Key.UserId,
+                g.Key.QuestionId
+            };
+
+        // نربطها مع AnswerScores
+        var perQuestionWithStatus =
+            from q in perQuestion
             join s in _db.AnswerScores.AsNoTracking()
-                on a.Id equals s.AnswerId into gs
+                on new { RevieweeUserId = q.UserId, q.QuestionId }
+                equals new { s.RevieweeUserId, s.QuestionId } into gs
             from s in gs.DefaultIfEmpty()
             select new
             {
-                a.UserId,
+                q.UserId,
                 HasScore = s != null,
-                ScoredAt = s != null ? s.ScoredAt : (DateTime?)null,
-                Score = s != null ? s.Score : 0,
+                ScoredAt = s != null ? (DateTime?)s.ScoredAt : null,
+                Score = s != null ? s.Score : 0m
             };
 
-        // نجمع على مستوى المستخدم
-        var aggregated = await perAnswer
+        var aggregated = await perQuestionWithStatus
             .GroupBy(x => x.UserId)
             .Select(g => new
             {
                 UserId = g.Key,
-                TotalAnswers = g.Count(),
+                TotalQuestions = g.Count(),
                 ScoredCount = g.Count(x => x.HasScore),
                 UnscoredCount = g.Count(x => !x.HasScore),
                 LastScoredAt = g.Max(x => x.ScoredAt),
-                TotalScore = g.Sum(x => x.Score)      
-
+                TotalScore = g.Sum(x => x.Score)
             })
             .ToListAsync(ct);
 
-        // أسماء المستخدمين
         var userIds = aggregated.Select(x => x.UserId).ToList();
+
         var usersMap = await _db.Users.AsNoTracking()
             .Where(u => userIds.Contains(u.Id))
             .Select(u => new { u.Id, u.UserName, u.FullName })
             .ToDictionaryAsync(u => u.Id, ct);
 
-        // إسقاط إلى DTO
         var rows = aggregated.Select(x => new UserScoreStatusDto
         {
             UserId = x.UserId,
             UserName = usersMap.TryGetValue(x.UserId, out var u) ? u.UserName : null,
             FullName = usersMap.TryGetValue(x.UserId, out var u2) ? (u2.FullName ?? u2.UserName) : null,
-            TotalAnswers = x.TotalAnswers,
+            TotalQuestions = x.TotalQuestions,
             ScoredCount = x.ScoredCount,
             UnscoredCount = x.UnscoredCount,
             HasScored = x.ScoredCount > 0,
@@ -367,7 +464,6 @@ public class AnswerScoringController : ControllerBase
             TotalScore = x.TotalScore
         }).ToList();
 
-        // تقسيم لقائمتين
         var result = new UsersScoredStatusVm
         {
             Scored = rows.Where(r => r.HasScored).OrderByDescending(r => r.LastScoredAt).ToList(),
@@ -378,84 +474,175 @@ public class AnswerScoringController : ControllerBase
     }
 
 
-    // DTO للتحديث الكامل حسب المستخدم
-
-    // PUT /api/AnswerScoring/by-user-scored/batch-update
-    [HttpPut("by-user-scored/batch-update")]
-    public async Task<IActionResult> UpdateUserScoredBatch([FromBody] BatchUserScoreUpdateDto payload, CancellationToken ct)
+    [HttpGet("by-user-scored")]
+    public async Task<IActionResult> GetScoredQuestionsByUser(
+    [FromQuery] int userId,
+    CancellationToken ct)
     {
-        if (payload?.Items == null || payload.Items.Count == 0)
-            return BadRequest("لا توجد عناصر للتحديث.");
+        // المقيّم الحالي (الـ Reviewer)
+        var reviewerId = GetCurrentReviewerId();
 
-        var userId = payload.UserId;
-
-        // 1) تأكيد أن كل الإجابات موجودة وتنتمي لهذا المستخدم
-        var answerIds = payload.Items.Select(i => i.AnswerId).Distinct().ToList();
-
+        // كل الإجابات لهذا المستخدم
         var answers = await _db.Answers
-            .Where(a => answerIds.Contains(a.Id))
-            .Select(a => new { a.Id, a.UserId })
+            .Include(a => a.Question)
+            .Include(a => a.QuestionItem)
+            .Include(a => a.Files).ThenInclude(f => f.File)
+            .AsNoTracking()
+            .Where(a => a.UserId == userId)
             .ToListAsync(ct);
 
-        if (answers.Count != answerIds.Count)
+        if (!answers.Any())
+            return Ok(new List<QuestionReviewDto>());
+
+        var questionIds = answers
+            .Select(a => a.QuestionId)
+            .Distinct()
+            .ToList();
+
+        // السكورات لهذا المستخدم (المُقَيَّم) من نفس المقيّم الحالي
+        var scores = await _db.AnswerScores
+            .Where(s =>
+                s.RevieweeUserId == userId &&
+                s.ReviewerUserId == reviewerId &&
+                questionIds.Contains(s.QuestionId))
+            .ToListAsync(ct);
+
+        if (!scores.Any())
+            return Ok(new List<QuestionReviewDto>());
+
+        // آخر سكور لكل QuestionId (لو انكتب أكثر من مرة)
+        var scoreByQuestion = scores
+            .GroupBy(s => s.QuestionId)
+            .ToDictionary(
+                g => g.Key,
+                g => g.OrderByDescending(x => x.ScoredAt).First()
+            );
+
+        var scoredQuestionIds = scoreByQuestion.Keys.ToHashSet();
+
+        // فقط الأسئلة التي لها سكور
+        var scoredGroups = answers
+            .Where(a => scoredQuestionIds.Contains(a.QuestionId))
+            .GroupBy(a => a.QuestionId)
+            .ToList();
+
+        var result = new List<QuestionReviewDto>();
+
+        foreach (var g in scoredGroups)
         {
-            var found = answers.Select(a => a.Id).ToHashSet();
-            var missing = answerIds.Where(id => !found.Contains(id));
-            return BadRequest("إجابات غير موجودة: " + string.Join(", ", missing));
+            var any = g.First();
+            var scoreRow = scoreByQuestion[g.Key];
+
+            var dto = new QuestionReviewDto
+            {
+                QuestionId = g.Key,
+                QuestionTitleEn = any.Question?.TitleEn ?? "",
+                QuestionDescriptionEn = any.Question?.DescriptionEn ?? "",
+                Items = g
+                    .OrderBy(a => a.QuestionItemId)
+                    .Select(a => new QuestionItemAnswerDto
+                    {
+                        QuestionItemId = a.QuestionItemId ?? 0,
+                        ItemTextEn = a.QuestionItem?.TextEn ?? "",
+                        AnswerValue = a.Value,
+                        Files = a.Files
+                            .Select(f => new
+                            {
+                                FileId = f.FileId,
+                                FileName = f.File.FileName,
+                                Size = f.File.Length,
+                                Url = f.File.Path
+                            } as object)
+                            .ToList()
+                    })
+                    .ToList(),
+
+                ExistingScore = scoreRow.Score,
+                ExistingNotes = scoreRow.Notes
+            };
+
+            result.Add(dto);
         }
 
-        var wrongOwner = answers.Where(a => a.UserId != userId).Select(a => a.Id).ToList();
-        if (wrongOwner.Count > 0)
-            return BadRequest("إجابات لا تعود لهذا المستخدم: " + string.Join(", ", wrongOwner));
+        return Ok(result);
+    }
+    // ================== 8) Batch Update للسكورات لمستخدم واحد (Scored Answers Form) ==================
+    // PUT: api/AnswerScoring/by-user-scored/batch-update
+    [HttpPut("by-user-scored/batch-update")]
+    public async Task<IActionResult> BatchUpdateScoredQuestions(
+        [FromBody] ScoreUpdateDto req,
+        CancellationToken ct)
+    {
+        if (req.Items == null || req.Items.Count == 0)
+            return BadRequest("لا يوجد درجات لتحديثها.");
 
-        // 2) جلب سجلات التقييم الموجودة لنفس المقيّم (Update-only)
-        var existingScores = await _db.AnswerScores
-            .Where(s =>  answerIds.Contains(s.AnswerId))
+        var reviewerId = GetCurrentReviewerId(); // المقيّم الحالي
+        var revieweeId = req.UserId;             // المستخدم الذي يتم تقييمه
+
+        var questionIds = req.Items
+            .Where(x => x.QuestionId > 0)
+            .Select(x => x.QuestionId)
+            .Distinct()
+            .ToList();
+
+        if (!questionIds.Any())
+            return BadRequest("لا توجد أسئلة صحيحة للتحديث.");
+
+        // تأكيد وجود الأسئلة
+        var existingQuestions = await _db.Questions
+            .Where(q => questionIds.Contains(q.Id))
+            .Select(q => q.Id)
             .ToListAsync(ct);
 
-        var byAnswerId = existingScores.ToDictionary(s => s.AnswerId);
-        var missingForReviewer = answerIds.Where(id => !byAnswerId.ContainsKey(id)).ToList();
-
-        if (missingForReviewer.Count > 0)
-            return BadRequest("لا يوجد تقييم سابق للتحديث لهذه الإجابات (لهذا المقيّم): " +
-                              string.Join(", ", missingForReviewer));
-
-        // 3) تنفيذ التحديث دفعة واحدة
-        var nowUtc = DateTime.UtcNow;
-        foreach (var item in payload.Items)
+        if (existingQuestions.Count != questionIds.Count)
         {
-            var s = byAnswerId[item.AnswerId];
-            s.Score = item.Score;
-            s.Notes = item.Notes;
-            s.ScoredAt = nowUtc;
+            var found = existingQuestions.ToHashSet();
+            var missing = questionIds.Where(id => !found.Contains(id));
+            return BadRequest("أسئلة غير موجودة: " + string.Join(", ", missing));
+        }
+
+        // السكورات الحالية لنفس (المُقيَّم + المقيِّم + الأسئلة)
+        var existingScores = await _db.AnswerScores
+            .Where(s =>
+                s.RevieweeUserId == revieweeId &&
+                s.ReviewerUserId == reviewerId &&
+                questionIds.Contains(s.QuestionId))
+            .ToListAsync(ct);
+
+        var byQuestionId = existingScores.ToDictionary(s => s.QuestionId);
+        var now = DateTime.UtcNow;
+
+        foreach (var item in req.Items)
+        {
+            // ممكن يكون null => نسمح بس بنحط 0 لو حاب
+            var scoreValue = item.Score ?? 0m;
+
+            if (byQuestionId.TryGetValue(item.QuestionId, out var s))
+            {
+                // UPDATE
+                s.Score = scoreValue;
+                s.Notes = item.Notes;
+                s.ScoredAt = now;
+            }
+            else
+            {
+                // INSERT
+                _db.AnswerScores.Add(new Domain.Entities.AnswerScore
+                {
+                    QuestionId = item.QuestionId,
+                    RevieweeUserId = revieweeId,
+                    ReviewerUserId = reviewerId,
+                    Score = scoreValue,
+                    Notes = item.Notes,
+                    ScoredAt = now
+                });
+            }
         }
 
         await _db.SaveChangesAsync(ct);
 
-        // 4) (اختياري) رجّع Snapshot بعد التحديث — مفيد لإعادة تعبئة الفورم
-        var updated = await (
-            from s in _db.AnswerScores.AsNoTracking()
-            join a in _db.Answers.AsNoTracking() on s.AnswerId equals a.Id
-            join qi in _db.QuestionItems.AsNoTracking() on a.QuestionItemId equals qi.Id into _qi
-            from qi in _qi.DefaultIfEmpty()
-            where  a.UserId == userId && answerIds.Contains(s.AnswerId)
-            select new
-            {
-                AnswerScoreId = s.Id,
-                s.AnswerId,
-                a.QuestionId,
-                a.QuestionItemId,
-                ItemTextEn = qi != null ? qi.TextEn : null,
-                a.Value,
-                s.Score,
-                s.Notes,
-                s.ScoredAt
-            })
-            .OrderBy(x => x.QuestionId)
-            .ThenBy(x => x.QuestionItemId)
-            .ToListAsync(ct);
-
-        return Ok(new { Ok = true, UserId = userId, Updated = updated.Count, Items = updated });
+        // يكفي OK بسيط لأن الـ MVC ما يقرأ البودي، فقط EnsureSuccessStatusCode
+        return Ok(new { success = true });
     }
 
 }

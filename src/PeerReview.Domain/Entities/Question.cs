@@ -6,16 +6,17 @@ public class Question : EntityBase
     public string TitleEn { get; set; } = "";
     public string DescriptionEn { get; set; } = "";
 
-    // Category مطلوبة
     public int CategoryId { get; set; }
     public Lookup Category { get; set; } = null!;
 
-    // SubCategory اختيارية
-    public int? SubCategoryId { get; set; }            // ← صارت nullable
-    public SubLookup? SubCategory { get; set; }        // ← تبقى nullable
+    public int? SubCategoryId { get; set; }
+    public SubLookup? SubCategory { get; set; }
 
     public ICollection<QuestionItem> Items { get; set; } = new List<QuestionItem>();
+
+    public ICollection<AnswerScore> Scores { get; set; } = new List<AnswerScore>();
 }
+
 
 public class QuestionItem : EntityBase
 {
